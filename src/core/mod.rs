@@ -115,12 +115,14 @@ fn setup_threads(num_threads: usize) -> Result<ThreadPool> {
 }
 
 /// Runs all MinedMap generation steps, updating all tiles as needed
-fn generate(config: &Config, rt: &Runtime) -> Result<()> {
-	let regions = RegionProcessor::new(config).run()?;
-	TileRenderer::new(config, rt, &regions).run()?;
-	let tiles = TileMipmapper::new(config, &regions).run()?;
-	EntityCollector::new(config, &regions).run()?;
-	MetadataWriter::new(config, &tiles).run()
+fn generate(args: &Args, rt: &Runtime) -> Result<()> {
+	let config = Config::new(args)?;
+
+	let regions = RegionProcessor::new(&config).run()?;
+	TileRenderer::new(&config, rt, &regions).run()?;
+	let tiles = TileMipmapper::new(&config, &regions).run()?;
+	EntityCollector::new(&config, &regions).run()?;
+	MetadataWriter::new(&config, &tiles).run()
 }
 
 /// Creates a file watcher for the
@@ -176,7 +178,6 @@ fn wait_watcher(args: &Args, watch_channel: &Receiver<()>) -> Result<()> {
 /// MinedMap CLI main function
 pub fn cli() -> Result<()> {
 	let args = Args::parse();
-	let config = Config::new(&args)?;
 
 	tracing_subscriber::fmt()
 		.with_max_level(if args.verbose {
@@ -202,7 +203,7 @@ pub fn cli() -> Result<()> {
 
 	let watch = args.watch.then(|| create_watcher(&args)).transpose()?;
 
-	pool.install(|| generate(&config, &rt))?;
+	pool.install(|| generate(&args, &rt))?;
 
 	let Some((_watcher, watch_channel)) = watch else {
 		// watch mode disabled
@@ -215,7 +216,7 @@ pub fn cli() -> Result<()> {
 	pool.install(move || {
 		loop {
 			wait_watcher(&args, &watch_channel)?;
-			generate(&config, &rt)?;
+			generate(&args, &rt)?;
 		}
 	})
 }
