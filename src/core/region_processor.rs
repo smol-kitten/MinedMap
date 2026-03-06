@@ -1,6 +1,11 @@
 //! The [RegionProcessor] and related functions
 
-use std::{ffi::OsStr, path::PathBuf, sync::mpsc, time::SystemTime};
+use std::{
+	ffi::OsStr,
+	path::{Path, PathBuf},
+	sync::mpsc,
+	time::SystemTime,
+};
 
 use anyhow::{Context, Result};
 use enum_map::{Enum, EnumMap};
@@ -28,6 +33,39 @@ fn parse_region_filename(file_name: &OsStr) -> Option<TileCoords> {
 		x: x.parse().ok()?,
 		z: z.parse().ok()?,
 	})
+}
+
+/// Builds an iterator over the regions of input Minecraft save data
+fn region_iterator(region_dir: &Path) -> Result<impl Iterator<Item = TileCoords>> {
+	Ok(region_dir
+		.read_dir()
+		.with_context(|| format!("Failed to read directory {}", region_dir.display()))?
+		.filter_map(|entry| entry.ok())
+		.filter(|entry| {
+			(|| {
+				// We are only interested in regular files
+				let file_type = entry.file_type().ok()?;
+				if !file_type.is_file() {
+					return None;
+				}
+
+				let metadata = entry.metadata().ok()?;
+				if metadata.len() == 0 {
+					return None;
+				}
+				Some(())
+			})()
+			.is_some()
+		})
+		.filter_map(|entry| parse_region_filename(&entry.file_name())))
+}
+
+/// Determines whether the given directory contains any Minecraft region files
+pub fn has_regions(region_dir: &Path) -> bool {
+	let Ok(mut iter) = region_iterator(region_dir) else {
+		return false;
+	};
+	iter.next().is_some()
 }
 
 /// [RegionProcessor::process_region] return values
@@ -351,35 +389,7 @@ impl<'a> RegionProcessor<'a> {
 
 	/// Generates a list of all regions of the input Minecraft save data
 	fn collect_regions(&self) -> Result<Vec<TileCoords>> {
-		Ok(self
-			.config
-			.region_dir
-			.read_dir()
-			.with_context(|| {
-				format!(
-					"Failed to read directory {}",
-					self.config.region_dir.display()
-				)
-			})?
-			.filter_map(|entry| entry.ok())
-			.filter(|entry| {
-				(|| {
-					// We are only interested in regular files
-					let file_type = entry.file_type().ok()?;
-					if !file_type.is_file() {
-						return None;
-					}
-
-					let metadata = entry.metadata().ok()?;
-					if metadata.len() == 0 {
-						return None;
-					}
-					Some(())
-				})()
-				.is_some()
-			})
-			.filter_map(|entry| parse_region_filename(&entry.file_name()))
-			.collect())
+		Ok(region_iterator(&self.config.region_dir)?.collect())
 	}
 
 	/// Processes a single region file

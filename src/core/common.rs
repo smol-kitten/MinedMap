@@ -12,6 +12,7 @@ use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+	core::region_processor,
 	io::fs::FileMetaVersion,
 	resource::Biome,
 	types::*,
@@ -161,7 +162,17 @@ pub struct Config {
 impl Config {
 	/// Crates a new [Config] from [command line arguments](super::Args)
 	pub fn new(args: &super::Args) -> Result<Self> {
-		let region_dir = [&args.input_dir, Path::new("region")].iter().collect();
+		let mut region_dir: PathBuf = [
+			&args.input_dir,
+			Path::new("dimensions/minecraft/overworld/region"),
+		]
+		.iter()
+		.collect();
+
+		if !region_processor::has_regions(&region_dir) {
+			region_dir = [&args.input_dir, Path::new("region")].iter().collect();
+		}
+
 		let level_dat_path = [&args.input_dir, Path::new("level.dat")].iter().collect();
 		let level_dat_old_path = [&args.input_dir, Path::new("level.dat_old")]
 			.iter()
