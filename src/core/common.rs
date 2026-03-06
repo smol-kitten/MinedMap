@@ -132,10 +132,6 @@ pub enum TileKind {
 /// Common configuration based on command line arguments
 #[derive(Debug)]
 pub struct Config {
-	/// Number of threads for parallel processing
-	pub num_threads: usize,
-	/// Number of threads for initial parallel processing
-	pub num_threads_initial: usize,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -165,13 +161,6 @@ pub struct Config {
 impl Config {
 	/// Crates a new [Config] from [command line arguments](super::Args)
 	pub fn new(args: &super::Args) -> Result<Self> {
-		let num_threads = match args.jobs {
-			Some(0) => num_cpus::get(),
-			Some(threads) => threads,
-			None => 1,
-		};
-		let num_threads_initial = args.jobs_initial.unwrap_or(num_threads);
-
 		let region_dir = [&args.input_dir, Path::new("region")].iter().collect();
 		let level_dat_path = [&args.input_dir, Path::new("level.dat")].iter().collect();
 		let level_dat_old_path = [&args.input_dir, Path::new("level.dat_old")]
@@ -190,8 +179,6 @@ impl Config {
 			Self::sign_transforms(args).context("Failed to parse sign transforms")?;
 
 		Ok(Config {
-			num_threads,
-			num_threads_initial,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,

@@ -187,7 +187,14 @@ pub fn cli() -> Result<()> {
 		.with_target(false)
 		.init();
 
-	let mut pool = setup_threads(config.num_threads_initial)?;
+	let num_threads = match args.jobs {
+		Some(0) => num_cpus::get(),
+		Some(threads) => threads,
+		None => 1,
+	};
+	let num_threads_initial = args.jobs_initial.unwrap_or(num_threads);
+
+	let mut pool = setup_threads(num_threads_initial)?;
 
 	let rt = tokio::runtime::Builder::new_current_thread()
 		.build()
@@ -202,8 +209,8 @@ pub fn cli() -> Result<()> {
 		return Ok(());
 	};
 
-	if config.num_threads != config.num_threads_initial {
-		pool = setup_threads(config.num_threads)?;
+	if num_threads != num_threads_initial {
+		pool = setup_threads(num_threads)?;
 	}
 	pool.install(move || {
 		loop {
