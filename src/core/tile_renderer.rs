@@ -78,7 +78,7 @@ impl<'a> TileRenderer<'a> {
 		regions: &'a [TileCoords],
 	) -> Self {
 		let region_cache = Mutex::new(LruCache::new(
-			NonZeroUsize::new(6 + 6 * config.num_threads).unwrap(),
+			NonZeroUsize::new(6 + 6 * rayon::current_num_threads()).unwrap(),
 		));
 		let region_set = regions.iter().copied().collect();
 		TileRenderer {
