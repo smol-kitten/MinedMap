@@ -4083,7 +4083,7 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		ConstBlockType {
 			block_color: BlockColor {
 				flags: make_bitflags!(BlockFlag::{Opaque}),
-				color: Color([105, 90, 82]),
+				color: Color([110, 95, 86]),
 			},
 			sign_material: None,
 		},
@@ -4184,6 +4184,16 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 			block_color: BlockColor {
 				flags: make_bitflags!(BlockFlag::{Opaque}),
 				color: Color([145, 133, 106]),
+			},
+			sign_material: None,
+		},
+	),
+	(
+		"golden_dandelion",
+		ConstBlockType {
+			block_color: BlockColor {
+				flags: make_bitflags!(BlockFlag::{}),
+				color: Color([0, 0, 0]),
 			},
 			sign_material: None,
 		},
@@ -7899,6 +7909,16 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		},
 	),
 	(
+		"potted_golden_dandelion",
+		ConstBlockType {
+			block_color: BlockColor {
+				flags: make_bitflags!(BlockFlag::{Opaque}),
+				color: Color([159, 102, 37]),
+			},
+			sign_material: None,
+		},
+	),
+	(
 		"potted_jungle_sapling",
 		ConstBlockType {
 			block_color: BlockColor {
@@ -8883,7 +8903,7 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		ConstBlockType {
 			block_color: BlockColor {
 				flags: make_bitflags!(BlockFlag::{Opaque}),
-				color: Color([75, 26, 144]),
+				color: Color([76, 23, 150]),
 			},
 			sign_material: None,
 		},
@@ -9903,7 +9923,7 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		ConstBlockType {
 			block_color: BlockColor {
 				flags: make_bitflags!(BlockFlag::{Opaque}),
-				color: Color([105, 80, 46]),
+				color: Color([113, 86, 50]),
 			},
 			sign_material: None,
 		},

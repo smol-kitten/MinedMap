@@ -25,8 +25,15 @@ for file in os.scandir(os.path.join(sys.argv[1], 'data/minecraft/worldgen/biome'
 		'water_color': data['effects'].get('water_color'),
 	}
 
+def decode_color(v):
+	if isinstance(v, str) and v[0] == '#':
+		return int(v[1:], 16)
+
+	return v
+
 def color(v):
 	return f'[{v>>16}, {(v>>8)&0xff}, {v&0xff}]'
+
 
 # Converts the snake_case grass color modifier to CamelCase
 def modify(v):
@@ -35,10 +42,10 @@ def modify(v):
 def gen_biome(name, info, f):
 	temp = round(100*info['temperature'])
 	downfall = round(100*info['downfall'])
-	foliage_color = info['foliage_color']
-	grass_color = info['grass_color']
+	foliage_color = decode_color(info['foliage_color'])
+	grass_color = decode_color(info['grass_color'])
 	grass_color_modifier = info['grass_color_modifier']
-	water_color = info['water_color']
+	water_color = decode_color(info['water_color'])
 
 	print(f'\t("{name}", Biome::new({temp}, {downfall})', file=f)
 
