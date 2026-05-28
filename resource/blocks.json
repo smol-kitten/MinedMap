@@ -1191,6 +1191,9 @@
 	"melon_stem": {
 		"grass": true
 	},
+	"mob_spawner": {
+		"texture": "spawner"
+	},
 	"moss_block": {},
 	"moss_carpet": {
 		"texture": "moss_block"
