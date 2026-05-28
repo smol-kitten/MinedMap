@@ -838,6 +838,7 @@
 	"glowstone": {},
 	"gold_block": {},
 	"gold_ore": {},
+	"golden_dandelion": null,
 	"granite": {},
 	"granite_slab": {
 		"texture": "granite"
@@ -1597,6 +1598,9 @@
 	},
 	"potted_flowering_azalea_bush": {
 		"texture": "flowering_azalea_top"
+	},
+	"potted_golden_dandelion": {
+		"texture": "golden_dandelion"
 	},
 	"potted_jungle_sapling": {
 		"texture": "jungle_sapling"
