@@ -6039,6 +6039,16 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		},
 	),
 	(
+		"mob_spawner",
+		ConstBlockType {
+			block_color: BlockColor {
+				flags: make_bitflags!(BlockFlag::{Opaque}),
+				color: Color([36, 46, 62]),
+			},
+			sign_material: None,
+		},
+	),
+	(
 		"moss_block",
 		ConstBlockType {
 			block_color: BlockColor {
