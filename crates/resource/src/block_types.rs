@@ -7719,6 +7719,16 @@ pub const BLOCK_TYPES: &[(&str, ConstBlockType)] = &[
 		},
 	),
 	(
+		"portal",
+		ConstBlockType {
+			block_color: BlockColor {
+				flags: make_bitflags!(BlockFlag::{Opaque}),
+				color: Color([89, 11, 192]),
+			},
+			sign_material: None,
+		},
+	),
+	(
 		"potatoes",
 		ConstBlockType {
 			block_color: BlockColor {

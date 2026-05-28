@@ -1541,6 +1541,9 @@
 		"texture": "polished_tuff"
 	},
 	"poppy": null,
+	"portal": {
+		"texture": "nether_portal"
+	},
 	"potatoes": {
 		"texture": "potatoes_stage3"
 	},
