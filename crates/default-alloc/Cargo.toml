@@ -1,6 +1,6 @@
 [package]
 name = "minedmap-default-alloc"
-version = "0.1.0"
+version = "0.1.1"
 description = "Helper crate for target-specific selection of global allocator default"
 edition.workspace = true
 license.workspace = true
