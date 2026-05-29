@@ -2,6 +2,13 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Added support for Minecraft versions up to 26.1.2
+
+  Added new block types and changed region storage directory structure of
+  Minecraft 26.1.
+
 ## [2.7.0] - 2025-11-02
 
 ### Added
