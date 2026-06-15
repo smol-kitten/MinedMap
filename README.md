@@ -222,7 +222,9 @@ Passing `--structures` reads the generated-structure data from each chunk (Java
 Edition) and draws the bounding boxes of structures — villages, fortresses,
 monuments, mansions, mineshafts, … — as labeled rectangles in a toggleable
 "Structures" viewer layer, colored by structure type. Each box is the union of
-the structure's pieces, so it covers the full footprint.
+the structure's pieces, so it covers the full footprint. For Bedrock Edition,
+village bounds (stored separately from chunk data) are surfaced in the same
+layer.
 
 ### Points of interest
 

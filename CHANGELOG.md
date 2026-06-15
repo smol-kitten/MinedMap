@@ -19,8 +19,9 @@
 - Added `--structures` option
 
   Collects the bounding boxes of generated structures (villages, fortresses,
-  monuments, …) and shows them as a toggleable "Structures" viewer layer (Java
-  Edition).
+  monuments, …) and shows them as a toggleable "Structures" viewer layer. Java
+  Edition reads per-chunk structure data; Bedrock Edition surfaces village
+  bounds from its `VILLAGE_*` records.
 
 - Added `--poi-markers` option
 
