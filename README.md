@@ -160,10 +160,11 @@ heatmap, built-up areas, and rail / farmland / portal chunk markers.
 
 Passing `--height-layer` generates an additional `height` tile layer that shades
 the map by terrain elevation using a hypsometric tint (blue for low areas
-through green and brown up to white peaks). The layer can be toggled in the
-viewer as "Topography" and works for both Java and Bedrock Edition. It is
-derived from the same height data already computed for the regular map, so it
-does not change the normal map tiles.
+through green and brown up to white peaks), with hillshaded relief for a
+three-dimensional look. The layer can be toggled in the viewer as "Topography"
+and works for both Java and Bedrock Edition. It is derived from the same height
+data already computed for the regular map, so it does not change the normal map
+tiles.
 
 ## Installation
 

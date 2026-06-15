@@ -234,39 +234,55 @@ impl<'a> TileRenderer<'a> {
 		}
 	}
 
-	/// Renders a chunk subtile of the topographic height layer
-	fn render_chunk_height(
-		image: &mut image::RgbaImage,
-		chunk: &ProcessedChunk,
-		chunk_coords: ChunkCoords,
-	) {
-		/// Width/height of a chunk subtile
-		const N: u32 = BLOCKS_PER_CHUNK as u32;
-
-		let chunk_image = image::RgbaImage::from_fn(N, N, |x, z| {
-			let block_coords = LayerBlockCoords {
-				x: BlockX::new(x),
-				z: BlockZ::new(z),
-			};
-			match chunk.depths[block_coords] {
-				Some(height) => {
-					let [r, g, b] = heightmap::height_color(height.0);
-					image::Rgba([r, g, b, 255])
-				}
-				None => image::Rgba([0, 0, 0, 0]),
-			}
-		});
-		overlay_chunk(image, &chunk_image, chunk_coords);
-	}
-
 	/// Renders the topographic height layer for a region tile image
+	///
+	/// Heights are first collected into a full-region grid so that hillshading
+	/// can use the gradient between neighboring blocks (including across chunk
+	/// boundaries within the region).
 	fn render_region_height(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		/// Width/height of a region tile in blocks
+		const N: usize = BLOCKS_PER_CHUNK * CHUNKS_PER_REGION;
+
+		let mut heights = vec![None; N * N];
 		for (coords, chunk) in region.chunks.iter() {
 			let Some(chunk) = chunk else {
 				continue;
 			};
+			let base_x = coords.x.0 as usize * BLOCKS_PER_CHUNK;
+			let base_z = coords.z.0 as usize * BLOCKS_PER_CHUNK;
+			for z in 0..BLOCKS_PER_CHUNK {
+				for x in 0..BLOCKS_PER_CHUNK {
+					let block_coords = LayerBlockCoords {
+						x: BlockX::new(x as u32),
+						z: BlockZ::new(z as u32),
+					};
+					if let Some(height) = chunk.depths[block_coords] {
+						heights[(base_z + z) * N + base_x + x] = Some(height.0);
+					}
+				}
+			}
+		}
 
-			Self::render_chunk_height(image, chunk, coords);
+		for pz in 0..N {
+			for px in 0..N {
+				let Some(height) = heights[pz * N + px] else {
+					continue;
+				};
+
+				// Sample a neighbor, falling back to the center height at edges
+				// or over missing data so flat shading is used there.
+				let sample = |dx: isize, dz: isize| -> i32 {
+					let x = (px as isize + dx).clamp(0, N as isize - 1) as usize;
+					let z = (pz as isize + dz).clamp(0, N as isize - 1) as usize;
+					heights[z * N + x].unwrap_or(height)
+				};
+
+				let dzdx = (sample(1, 0) - sample(-1, 0)) as f32 * 0.5;
+				let dzdz = (sample(0, 1) - sample(0, -1)) as f32 * 0.5;
+				let shade = heightmap::hillshade(dzdx, dzdz);
+				let [r, g, b] = heightmap::shade_color(heightmap::height_color(height), shade);
+				image.put_pixel(px as u32, pz as u32, image::Rgba([r, g, b, 255]));
+			}
 		}
 	}
 

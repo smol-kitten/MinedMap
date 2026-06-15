@@ -44,9 +44,53 @@ pub fn height_color(height: i32) -> [u8; 3] {
 	[last[0] as u8, last[1] as u8, last[2] as u8]
 }
 
+/// Computes a hillshade lighting factor from a local height gradient
+///
+/// `dzdx` and `dzdz` are the height differences along the X and Z axes. The
+/// returned factor (roughly 0.3..1.2) is multiplied with the base color to give
+/// the topographic layer a relief-shaded, three-dimensional appearance. The
+/// light is fixed in the north-west at a 45° elevation.
+pub fn hillshade(dzdx: f32, dzdz: f32) -> f32 {
+	// Surface normal (Y up), with the vertical component scaling the strength
+	// of the shading.
+	let nx = -dzdx;
+	let nz = -dzdz;
+	let ny = 4.0;
+	let len = (nx * nx + ny * ny + nz * nz).sqrt();
+
+	// Normalized light direction (unit vector) coming from one corner at a 45°
+	// elevation, giving the relief a consistent shaded look.
+	const LX: f32 = 0.5;
+	const LY: f32 = std::f32::consts::FRAC_1_SQRT_2;
+	const LZ: f32 = 0.5;
+
+	let dot = (nx * LX + ny * LY + nz * LZ) / len;
+	(0.55 + 0.6 * dot).clamp(0.3, 1.2)
+}
+
+/// Applies a shading factor to an RGB color, clamping to the valid range
+pub fn shade_color(color: [u8; 3], factor: f32) -> [u8; 3] {
+	let mut out = [0u8; 3];
+	for i in 0..3 {
+		out[i] = (color[i] as f32 * factor).round().clamp(0.0, 255.0) as u8;
+	}
+	out
+}
+
 #[cfg(test)]
 mod test {
 	use super::*;
+
+	#[test]
+	fn test_hillshade() {
+		// A slope facing the light is brighter than one facing away
+		let lit = hillshade(-4.0, -4.0);
+		let shadow = hillshade(4.0, 4.0);
+		assert!(lit > shadow);
+		// Flat terrain returns a mid-range factor
+		let flat = hillshade(0.0, 0.0);
+		assert!((0.3..=1.2).contains(&flat));
+	}
 
 	#[test]
 	fn test_height_color_range() {
