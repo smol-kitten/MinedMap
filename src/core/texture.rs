@@ -8,7 +8,7 @@
 use std::{
 	collections::HashMap,
 	path::{Path, PathBuf},
-	sync::{Arc, Mutex},
+	sync::{Arc, RwLock},
 };
 
 use image::{RgbaImage, imageops::FilterType};
@@ -35,7 +35,7 @@ pub struct TextureAtlas {
 	/// Output size (in pixels) of each block texture
 	scale: u32,
 	/// Cache of loaded textures (None marks a known-missing texture)
-	cache: Mutex<HashMap<String, Option<Arc<LoadedTexture>>>>,
+	cache: RwLock<HashMap<String, Option<Arc<LoadedTexture>>>>,
 }
 
 impl TextureAtlas {
@@ -44,7 +44,7 @@ impl TextureAtlas {
 		TextureAtlas {
 			root: root.to_path_buf(),
 			scale,
-			cache: Mutex::new(HashMap::new()),
+			cache: RwLock::new(HashMap::new()),
 		}
 	}
 
@@ -105,16 +105,19 @@ impl TextureAtlas {
 
 	/// Returns the texture for a block identifier, loading it if necessary
 	pub fn get(&self, name: &str) -> Option<Arc<LoadedTexture>> {
-		if let Some(entry) = self.cache.lock().unwrap().get(name) {
+		// Fast path: shared read lock for the common (already cached) case.
+		if let Some(entry) = self.cache.read().unwrap().get(name) {
 			return entry.clone();
 		}
 
+		// Load outside the lock, then insert under a write lock.
 		let loaded = self.load(name);
 		self.cache
-			.lock()
+			.write()
 			.unwrap()
-			.insert(name.to_string(), loaded.clone());
-		loaded
+			.entry(name.to_string())
+			.or_insert(loaded)
+			.clone()
 	}
 }
 

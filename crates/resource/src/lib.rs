@@ -68,6 +68,70 @@ impl BlockColor {
 	pub fn is(&self, flag: BlockFlag) -> bool {
 		self.flags.contains(flag)
 	}
+
+	/// Returns a [BlockColor] for an unrecognized block, according to the mode
+	///
+	/// Returns [None] for [UnknownBlockMode::Hide], so the block is treated as
+	/// transparent (the historical behavior). Otherwise an opaque color is
+	/// returned so the block shows up on the map, which is useful for modded
+	/// worlds full of blocks MinedMap does not know about.
+	pub fn unknown(name: &str, mode: UnknownBlockMode) -> Option<BlockColor> {
+		match mode {
+			UnknownBlockMode::Hide => None,
+			UnknownBlockMode::Gray => Some(BlockColor::NEUTRAL),
+			UnknownBlockMode::Color => Some(BlockColor {
+				flags: make_bitflags!(BlockFlag::{Opaque}),
+				color: unknown_block_color(name),
+			}),
+		}
+	}
+}
+
+/// How unrecognized (for example modded) blocks are rendered
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum UnknownBlockMode {
+	/// Treat unknown blocks as transparent (do not render them)
+	#[default]
+	Hide,
+	/// Render unknown blocks in a neutral gray
+	Gray,
+	/// Render unknown blocks in a stable color derived from their name
+	Color,
+}
+
+/// Computes a stable, distinct color for an unknown block name
+///
+/// Uses an FNV-1a hash of the name to pick a hue, so each distinct block type
+/// gets a consistent but recognizably different color.
+fn unknown_block_color(name: &str) -> Color {
+	let mut hash: u32 = 0x811c_9dc5;
+	for byte in name.bytes() {
+		hash ^= u32::from(byte);
+		hash = hash.wrapping_mul(0x0100_0193);
+	}
+	let hue = (hash % 360) as f32;
+	hsv_to_rgb(hue, 0.45, 0.7)
+}
+
+/// Converts an HSV color (hue in degrees, saturation/value in 0..1) to RGB
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> Color {
+	let c = v * s;
+	let h6 = h / 60.0;
+	let x = c * (1.0 - (h6 % 2.0 - 1.0).abs());
+	let (r1, g1, b1) = match h6 as u32 {
+		0 => (c, x, 0.0),
+		1 => (x, c, 0.0),
+		2 => (0.0, c, x),
+		3 => (0.0, x, c),
+		4 => (x, 0.0, c),
+		_ => (c, 0.0, x),
+	};
+	let m = v - c;
+	Color([
+		((r1 + m) * 255.0).round() as u8,
+		((g1 + m) * 255.0).round() as u8,
+		((b1 + m) * 255.0).round() as u8,
+	])
 }
 
 /// A block type specification (for use in constants)
@@ -247,6 +311,21 @@ impl Biome {
 	pub fn downfall(&self) -> f32 {
 		Self::decode(self.downfall)
 	}
+
+	/// Returns a representative color for the biome, for the biome map layer
+	///
+	/// Uses the biome's grass color override if it has one, otherwise derives a
+	/// climate color from temperature (cold = blue, hot = red) and downfall
+	/// (dry = pale, wet = saturated).
+	pub fn map_color(&self) -> Color {
+		if let Some(color) = self.grass_color {
+			return color;
+		}
+		let t = ((self.temp() + 0.5) / 2.5).clamp(0.0, 1.0);
+		let hue = 240.0 * (1.0 - t);
+		let saturation = 0.35 + 0.45 * self.downfall().clamp(0.0, 1.0);
+		hsv_to_rgb(hue, saturation, 0.8)
+	}
 }
 
 /// Used to look up standard Minecraft biome types
@@ -312,5 +391,29 @@ impl BiomeTypes {
 	#[inline]
 	pub fn get_fallback(&self) -> &Biome {
 		self.fallback_biome
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[test]
+	fn test_unknown_block_modes() {
+		// Hidden by default
+		assert!(BlockColor::unknown("modid:gizmo", UnknownBlockMode::Hide).is_none());
+
+		// Gray mode is the neutral color and opaque
+		let gray = BlockColor::unknown("modid:gizmo", UnknownBlockMode::Gray).unwrap();
+		assert_eq!(gray.color, BlockColor::NEUTRAL.color);
+		assert!(gray.is(BlockFlag::Opaque));
+
+		// Color mode is opaque, deterministic, and distinct per name
+		let a = BlockColor::unknown("modid:gizmo", UnknownBlockMode::Color).unwrap();
+		let a2 = BlockColor::unknown("modid:gizmo", UnknownBlockMode::Color).unwrap();
+		let b = BlockColor::unknown("modid:widget", UnknownBlockMode::Color).unwrap();
+		assert!(a.is(BlockFlag::Opaque));
+		assert_eq!(a.color, a2.color);
+		assert_ne!(a.color, b.color);
 	}
 }

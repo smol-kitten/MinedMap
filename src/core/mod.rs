@@ -25,7 +25,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use git_version::git_version;
 
-use common::{Config, Edition, ImageFormat};
+use common::{Config, Edition, ImageFormat, UnknownBlocks};
 use metadata_writer::MetadataWriter;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use rayon::ThreadPool;
@@ -113,6 +113,12 @@ pub struct Args {
 	/// selectable in the viewer. Does not affect the regular map tiles.
 	#[arg(long)]
 	pub height_layer: bool,
+	/// Generate an additional biome/climate map layer
+	///
+	/// Renders a `biome` tile layer coloring the map by biome, selectable in the
+	/// viewer. Does not affect the regular map tiles.
+	#[arg(long)]
+	pub biome_layer: bool,
 	/// Generate a high-resolution textured map layer from a resource pack
 	///
 	/// Samples the top-face block textures from the given resource pack
@@ -124,6 +130,12 @@ pub struct Args {
 	/// Per-block texture size in pixels for the textured layer
 	#[arg(long, value_name = "PIXELS", default_value_t = 8, value_parser = clap::value_parser!(u32).range(1..=16))]
 	pub texture_scale: u32,
+	/// How to render unrecognized (for example modded) blocks
+	///
+	/// By default unknown blocks are hidden (rendered as transparent). Use
+	/// `gray` or `color` to make them visible, which is useful for modded worlds.
+	#[arg(long, value_enum, default_value_t)]
+	pub unknown_blocks: UnknownBlocks,
 	/// Prefix for text of signs to show on the map
 	#[arg(long)]
 	pub sign_prefix: Vec<String>,

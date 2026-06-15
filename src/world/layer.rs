@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use super::chunk::{Chunk, SectionIterItem};
 use crate::{
-	resource::{Biome, BlockColor, BlockFlag},
+	resource::{Biome, BlockColor, BlockFlag, UnknownBlockMode},
 	types::*,
 };
 
@@ -90,14 +90,22 @@ impl LayerEntry<'_> {
 		&mut self,
 		biome_list: &mut IndexSet<Biome>,
 		name_list: &mut IndexSet<String>,
+		capture_names: bool,
+		unknown: UnknownBlockMode,
 		section: SectionIterItem,
 		coords: SectionBlockCoords,
 	) -> Result<bool> {
-		let Some(block_type) = section
-			.section
-			.block_at(coords)?
-			.filter(|block_type| block_type.block_color.is(BlockFlag::Opaque))
-		else {
+		let block_color = match section.section.block_at(coords)? {
+			Some(block_type) => Some(block_type.block_color),
+			// Unrecognized (for example modded) block: render it according to
+			// the configured mode instead of always treating it as transparent.
+			None => BlockColor::unknown(
+				section.section.block_name_at(coords).unwrap_or_default(),
+				unknown,
+			),
+		};
+
+		let Some(block_color) = block_color.filter(|color| color.is(BlockFlag::Opaque)) else {
 			if self.is_empty() {
 				*self.block_light = section.block_light.block_light_at(coords);
 			}
@@ -106,7 +114,7 @@ impl LayerEntry<'_> {
 		};
 
 		if self.is_empty() {
-			*self.block = Some(block_type.block_color);
+			*self.block = Some(block_color);
 
 			let biome = section.biomes.biome_at(section.y, coords)?;
 			let (biome_index, _) = biome_list.insert_full(*biome);
@@ -116,17 +124,15 @@ impl LayerEntry<'_> {
 					.expect("biome index not in range"),
 			);
 
-			if let Some(name) = section.section.block_name_at(coords) {
+			if capture_names && let Some(name) = section.section.block_name_at(coords) {
 				let (name_index, _) = name_list.insert_full(name.to_string());
-				*self.name = NonZeroU16::new(
-					(name_index + 1)
-						.try_into()
-						.expect("block name index not in range"),
-				);
+				// Skip the name (texture falls back to the flat color) rather
+				// than panicking if a region somehow exceeds u16 distinct names.
+				*self.name = u16::try_from(name_index + 1).ok().and_then(NonZeroU16::new);
 			}
 		}
 
-		if block_type.block_color.is(BlockFlag::Water) {
+		if block_color.is(BlockFlag::Water) {
 			return Ok(false);
 		}
 
@@ -179,6 +185,8 @@ impl LayerData {
 pub fn top_layer(
 	biome_list: &mut IndexSet<Biome>,
 	name_list: &mut IndexSet<String>,
+	capture_names: bool,
+	unknown: UnknownBlockMode,
 	chunk: &Chunk,
 ) -> Result<Option<LayerData>> {
 	use BLOCKS_PER_CHUNK as N;
@@ -202,7 +210,14 @@ pub fn top_layer(
 					}
 
 					let coords = SectionBlockCoords { xz, y };
-					if !entry.fill(biome_list, name_list, section, coords)? {
+					if !entry.fill(
+						biome_list,
+						name_list,
+						capture_names,
+						unknown,
+						section,
+						coords,
+					)? {
 						continue;
 					}
 

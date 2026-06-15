@@ -39,6 +39,12 @@ pub const MAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 /// changes (because of code changes in heightmap tile generation)
 pub const HEIGHTMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap biome map tile data version number
+///
+/// Increase when the generation of biome map tiles changes (because of code
+/// changes or updated biome color data)
+pub const BIOMEMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap textured tile data version number
 ///
 /// Increase when the generation of textured tiles changes (because of code
@@ -142,8 +148,32 @@ pub enum TileKind {
 	Lightmap,
 	/// Heightmap tile for the topographic layer
 	Heightmap,
+	/// Biome map tile for the biome/climate layer
+	Biomemap,
 	/// High-resolution textured map tile
 	Textured,
+}
+
+/// How unrecognized (for example modded) blocks are rendered
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum UnknownBlocks {
+	/// Treat unknown blocks as transparent (do not render them)
+	#[default]
+	Hide,
+	/// Render unknown blocks in a neutral gray
+	Gray,
+	/// Render unknown blocks in a stable color derived from their name
+	Color,
+}
+
+impl From<UnknownBlocks> for crate::resource::UnknownBlockMode {
+	fn from(value: UnknownBlocks) -> Self {
+		match value {
+			UnknownBlocks::Hide => crate::resource::UnknownBlockMode::Hide,
+			UnknownBlocks::Gray => crate::resource::UnknownBlockMode::Gray,
+			UnknownBlocks::Color => crate::resource::UnknownBlockMode::Color,
+		}
+	}
 }
 
 /// Edition of the input Minecraft save data
@@ -191,10 +221,14 @@ pub struct Config {
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
 	pub height_layer: bool,
+	/// Whether to generate the biome/climate layer
+	pub biome_layer: bool,
 	/// Resource pack directory for the textured layer, if requested
 	pub block_textures: Option<PathBuf>,
 	/// Per-block texture size (in pixels) for the textured layer
 	pub texture_scale: u32,
+	/// How to render unrecognized (for example modded) blocks
+	pub unknown_blocks: crate::resource::UnknownBlockMode,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -259,8 +293,10 @@ impl Config {
 			emit_overlays: args.emit_overlays.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
+			biome_layer: args.biome_layer,
 			block_textures: args.block_textures.clone(),
 			texture_scale: args.texture_scale,
+			unknown_blocks: args.unknown_blocks.into(),
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -342,6 +378,7 @@ impl Config {
 			TileKind::Map => "map",
 			TileKind::Lightmap => "light",
 			TileKind::Heightmap => "height",
+			TileKind::Biomemap => "biome",
 			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");

@@ -42,7 +42,7 @@ use super::{
 };
 use crate::{
 	io::{fs, storage},
-	resource::{BlockFlag, BlockTypes},
+	resource::{BlockFlag, BlockTypes, UnknownBlockMode},
 	types::*,
 	world::layer::{self, BlockHeight, NameArray},
 };
@@ -369,15 +369,16 @@ fn process_overworld_region(
 	timestamp: SystemTime,
 ) -> Result<overlay::DimensionOverlay> {
 	let want_overlays = config.wants_overlays();
+	let unknown = config.unknown_blocks;
 
 	let results: Vec<ProcessedChunkResult> = raw
 		.par_iter()
 		.map(|raw_chunk| {
 			let sections = decode_sections(raw_chunk);
-			let chunk = build_processed_chunk(block_types, &sections);
+			let chunk = build_processed_chunk(block_types, unknown, &sections);
 			let textured = atlas.and_then(|atlas| {
 				chunk.as_deref().map(|processed| {
-					render_textured_chunk(atlas, block_types, &sections, processed)
+					render_textured_chunk(atlas, block_types, unknown, &sections, processed)
 				})
 			});
 			let overlay = if want_overlays {
@@ -452,6 +453,7 @@ fn process_overworld_region(
 fn render_textured_chunk(
 	atlas: &TextureAtlas,
 	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
 	sections: &BTreeMap<i32, SubChunkLayer>,
 	processed: &ProcessedChunk,
 ) -> image::RgbaImage {
@@ -460,7 +462,7 @@ fn render_textured_chunk(
 
 	for x in 0..subchunk::SUBCHUNK_SIZE {
 		for z in 0..subchunk::SUBCHUNK_SIZE {
-			if let Some(name) = surface_block_name(block_types, sections, x, z) {
+			if let Some(name) = surface_block_name(block_types, unknown, sections, x, z) {
 				let (index, _) = name_list.insert_full(name);
 				names[LayerBlockCoords {
 					x: BlockX::new(x),
@@ -488,6 +490,7 @@ fn render_textured_chunk(
 /// Returns the Java-translated name of the topmost opaque block in a column
 fn surface_block_name(
 	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
 	sections: &BTreeMap<i32, SubChunkLayer>,
 	x: usize,
 	z: usize,
@@ -497,8 +500,8 @@ fn surface_block_name(
 			let Some(name) = sec.name_at(block_offset(x, y, z)) else {
 				continue;
 			};
-			let (color, _) = blocks::block_color(name, block_types);
-			if color.is(BlockFlag::Opaque) {
+			let (color, _) = blocks::block_color(name, block_types, unknown);
+			if color.is_some_and(|color| color.is(BlockFlag::Opaque)) {
 				return Some(blocks::translate_block_name(name).to_string());
 			}
 		}
@@ -533,6 +536,7 @@ fn block_types_fallback_biome() -> &'static minedmap_resource::Biome {
 /// Builds top-layer [ProcessedChunk] data from decoded subchunks
 fn build_processed_chunk(
 	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
 	sections: &BTreeMap<i32, SubChunkLayer>,
 ) -> Option<Box<ProcessedChunk>> {
 	if sections.is_empty() {
@@ -551,6 +555,7 @@ fn build_processed_chunk(
 			};
 			fill_column(
 				block_types,
+				unknown,
 				sections,
 				x,
 				z,
@@ -573,6 +578,7 @@ fn build_processed_chunk(
 #[allow(clippy::too_many_arguments)]
 fn fill_column(
 	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
 	sections: &BTreeMap<i32, SubChunkLayer>,
 	x: usize,
 	z: usize,
@@ -588,7 +594,9 @@ fn fill_column(
 			let Some(name) = sec.name_at(block_offset(x, y, z)) else {
 				continue;
 			};
-			let (color, _unknown) = blocks::block_color(name, block_types);
+			let Some(color) = blocks::block_color(name, block_types, unknown).0 else {
+				continue;
+			};
 			if !color.is(BlockFlag::Opaque) {
 				continue;
 			}
@@ -736,8 +744,10 @@ mod test {
 			emit_overlays: Some(overlay_dir.to_path_buf()),
 			overlay_layers: true,
 			height_layer: true,
+			biome_layer: true,
 			block_textures: Some(input_dir.join("textures")),
 			texture_scale: 4,
+			unknown_blocks: UnknownBlockMode::Color,
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
 			level_dat_old_path: input_dir.join("level.dat_old"),
@@ -808,8 +818,9 @@ mod test {
 
 		// A map tile must have been rendered for region (0, 0)
 		assert!(output_dir.join("map/0/r.0.0.png").is_file());
-		// The topographic height layer must have been generated too
+		// The topographic height and biome layers must have been generated too
 		assert!(output_dir.join("height/0/r.0.0.png").is_file());
+		assert!(output_dir.join("biome/0/r.0.0.png").is_file());
 		assert!(output_dir.join("info.json").is_file());
 
 		// The textured layer must have been generated at 4x the resolution and
@@ -852,6 +863,7 @@ mod test {
 		assert_eq!(info["spawn"]["x"], 64);
 		assert_eq!(info["spawn"]["z"], -32);
 		assert_eq!(info["features"]["height"], true);
+		assert_eq!(info["features"]["biome"], true);
 		assert_eq!(info["features"]["overlays"], true);
 		assert_eq!(info["features"]["textured"], true);
 

@@ -52,6 +52,8 @@ struct Features {
 	signs: bool,
 	/// Topographic height layer
 	height: bool,
+	/// Biome/climate layer
+	biome: bool,
 	/// Overlay data layers (heatmap, features)
 	overlays: bool,
 	/// High-resolution textured layer
@@ -245,6 +247,7 @@ impl<'a> MetadataWriter<'a> {
 		let features = Features {
 			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
 			height: self.config.height_layer,
+			biome: self.config.biome_layer,
 			overlays: self.config.overlay_layers,
 			textured: self.config.block_textures.is_some(),
 		};

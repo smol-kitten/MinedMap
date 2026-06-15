@@ -286,6 +286,33 @@ impl<'a> TileRenderer<'a> {
 		}
 	}
 
+	/// Renders the biome/climate layer for a region tile image
+	fn render_region_biome(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		/// Width/height of a chunk subtile
+		const N: u32 = BLOCKS_PER_CHUNK as u32;
+
+		for (chunk_coords, chunk) in region.chunks.iter() {
+			let Some(chunk) = chunk else {
+				continue;
+			};
+
+			let chunk_image = image::RgbaImage::from_fn(N, N, |x, z| {
+				let block_coords = LayerBlockCoords {
+					x: BlockX::new(x),
+					z: BlockZ::new(z),
+				};
+				let color = chunk.biomes[block_coords]
+					.and_then(|index| region.biome_list.get(usize::from(index.get()) - 1))
+					.map(|biome| biome.map_color());
+				match color {
+					Some(c) => image::Rgba([c.0[0], c.0[1], c.0[2], 255]),
+					None => image::Rgba([0, 0, 0, 0]),
+				}
+			});
+			overlay_chunk(image, &chunk_image, chunk_coords);
+		}
+	}
+
 	/// Returns the filename of the processed data for a region and the time of its last modification
 	fn processed_source(&self, coords: TileCoords) -> Result<(PathBuf, SystemTime)> {
 		let path = self.config.processed_path(coords);
@@ -332,7 +359,12 @@ impl<'a> TileRenderer<'a> {
 			&& Some(processed_timestamp)
 				> fs::read_timestamp(&height_output_path, HEIGHTMAP_FILE_META_VERSION);
 
-		if !map_needed && !height_needed {
+		let biome_output_path = self.config.tile_path(TileKind::Biomemap, 0, coords);
+		let biome_needed = self.config.biome_layer
+			&& Some(processed_timestamp)
+				> fs::read_timestamp(&biome_output_path, BIOMEMAP_FILE_META_VERSION);
+
+		if !map_needed && !height_needed && !biome_needed {
 			debug!(
 				"Skipping unchanged tile {}",
 				output_path
@@ -388,6 +420,22 @@ impl<'a> TileRenderer<'a> {
 			)?;
 		}
 
+		if biome_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region_biome(&mut image, region_group.center());
+
+			fs::create_with_timestamp(
+				&biome_output_path,
+				BIOMEMAP_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
+
 		Ok(true)
 	}
 
@@ -396,6 +444,9 @@ impl<'a> TileRenderer<'a> {
 		fs::create_dir_all(&self.config.tile_dir(TileKind::Map, 0))?;
 		if self.config.height_layer {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Heightmap, 0))?;
+		}
+		if self.config.biome_layer {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Biomemap, 0))?;
 		}
 
 		info!("Rendering map tiles...");
