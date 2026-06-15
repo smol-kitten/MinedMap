@@ -33,6 +33,12 @@ pub const REGION_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(13);
 /// (because of code changes in tile generation)
 pub const MAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap heightmap tile data version number
+///
+/// Increase when the generation of heightmap tiles from processed regions
+/// changes (because of code changes in heightmap tile generation)
+pub const HEIGHTMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap lightmap data version number
 ///
 /// Increase when the generation of lightmap tiles from region data changes
@@ -128,6 +134,8 @@ pub enum TileKind {
 	Map,
 	/// Lightmap tile for illumination layer
 	Lightmap,
+	/// Heightmap tile for the topographic layer
+	Heightmap,
 }
 
 /// Edition of the input Minecraft save data
@@ -171,6 +179,8 @@ pub struct Config {
 	pub input_dir: PathBuf,
 	/// Directory to emit overlay data to, if requested
 	pub emit_overlays: Option<PathBuf>,
+	/// Whether to generate the topographic height layer
+	pub height_layer: bool,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -233,6 +243,7 @@ impl Config {
 			edition,
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
+			height_layer: args.height_layer,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -313,6 +324,7 @@ impl Config {
 		let prefix = match kind {
 			TileKind::Map => "map",
 			TileKind::Lightmap => "light",
+			TileKind::Heightmap => "height",
 		};
 		let dir = format!("{prefix}/{level}");
 		[&self.output_dir, Path::new(&dir)].iter().collect()

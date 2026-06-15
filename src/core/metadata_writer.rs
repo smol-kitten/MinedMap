@@ -50,6 +50,8 @@ struct Spawn {
 struct Features {
 	/// Sign layer
 	signs: bool,
+	/// Topographic height layer
+	height: bool,
 }
 
 /// Viewer metadata JSON data structure
@@ -238,6 +240,7 @@ impl<'a> MetadataWriter<'a> {
 	pub fn run(self) -> Result<()> {
 		let features = Features {
 			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
+			height: self.config.height_layer,
 		};
 
 		let mut metadata = Metadata {

@@ -3,6 +3,7 @@
 mod bedrock;
 mod common;
 mod entity_collector;
+mod heightmap;
 mod metadata_writer;
 mod overlay;
 mod region_group;
@@ -98,6 +99,12 @@ pub struct Args {
 	/// regular render pass. Does not affect the generated map tiles.
 	#[arg(long, value_name = "DIR")]
 	pub emit_overlays: Option<PathBuf>,
+	/// Generate an additional topographic (height) map layer
+	///
+	/// Renders a `height` tile layer that shades the map by terrain elevation,
+	/// selectable in the viewer. Does not affect the regular map tiles.
+	#[arg(long)]
+	pub height_layer: bool,
 	/// Prefix for text of signs to show on the map
 	#[arg(long)]
 	pub sign_prefix: Vec<String>,

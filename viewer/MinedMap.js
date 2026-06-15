@@ -342,6 +342,7 @@ window.createMap = function () {
 			params.x = parseFloat(args['x']);
 			params.z = parseFloat(args['z']);
 			params.light = parseInt(args['light']);
+			params.height = parseInt(args['height']);
 			params.signs = parseInt(args['signs'] ?? '1');
 			params.marker = (args['marker'] ?? '').split(',').map((i) => +i);
 
@@ -384,6 +385,14 @@ window.createMap = function () {
 		if (params.light)
 			map.addLayer(lightLayer);
 
+		let heightLayer;
+		if (features.height) {
+			heightLayer = new MinedMapLayer(mipmaps, 'height', tile_extension);
+			overlayMaps['Topography'] = heightLayer;
+			if (params.height)
+				map.addLayer(heightLayer);
+		}
+
 		let signLayer;
 		if (features.signs) {
 			signLayer = L.layerGroup();
@@ -411,6 +420,8 @@ window.createMap = function () {
 
 			if (map.hasLayer(lightLayer))
 				ret += '&light=1';
+			if (features.height && map.hasLayer(heightLayer))
+				ret += '&height=1';
 			if (features.signs && !map.hasLayer(signLayer))
 				ret += '&signs=0';
 			if (params.marker) {
@@ -426,7 +437,7 @@ window.createMap = function () {
 
 		const refreshHash = function (ev) {
 			if (ev.type === 'layeradd' || ev.type === 'layerremove') {
-				if (ev.layer !== lightLayer && ev.layer !== signLayer)
+				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer)
 					return;
 			}
 
@@ -461,6 +472,13 @@ window.createMap = function () {
 				map.addLayer(lightLayer);
 			else
 				map.removeLayer(lightLayer);
+
+			if (features.height) {
+				if (params.height)
+					map.addLayer(heightLayer);
+				else
+					map.removeLayer(heightLayer);
+			}
 
 			if (features.signs) {
 				if (params.signs)

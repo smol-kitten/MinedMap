@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use tokio::sync::OnceCell;
 use tracing::{debug, info};
 
-use super::{common::*, region_group::RegionGroup};
+use super::{common::*, heightmap, region_group::RegionGroup};
 use crate::{
 	io::{fs, storage},
 	resource::{Colorf, block_color, needs_biome},
@@ -234,6 +234,42 @@ impl<'a> TileRenderer<'a> {
 		}
 	}
 
+	/// Renders a chunk subtile of the topographic height layer
+	fn render_chunk_height(
+		image: &mut image::RgbaImage,
+		chunk: &ProcessedChunk,
+		chunk_coords: ChunkCoords,
+	) {
+		/// Width/height of a chunk subtile
+		const N: u32 = BLOCKS_PER_CHUNK as u32;
+
+		let chunk_image = image::RgbaImage::from_fn(N, N, |x, z| {
+			let block_coords = LayerBlockCoords {
+				x: BlockX::new(x),
+				z: BlockZ::new(z),
+			};
+			match chunk.depths[block_coords] {
+				Some(height) => {
+					let [r, g, b] = heightmap::height_color(height.0);
+					image::Rgba([r, g, b, 255])
+				}
+				None => image::Rgba([0, 0, 0, 0]),
+			}
+		});
+		overlay_chunk(image, &chunk_image, chunk_coords);
+	}
+
+	/// Renders the topographic height layer for a region tile image
+	fn render_region_height(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		for (coords, chunk) in region.chunks.iter() {
+			let Some(chunk) = chunk else {
+				continue;
+			};
+
+			Self::render_chunk_height(image, chunk, coords);
+		}
+	}
+
 	/// Returns the filename of the processed data for a region and the time of its last modification
 	fn processed_source(&self, coords: TileCoords) -> Result<(PathBuf, SystemTime)> {
 		let path = self.config.processed_path(coords);
@@ -273,8 +309,14 @@ impl<'a> TileRenderer<'a> {
 
 		let output_path = self.config.tile_path(TileKind::Map, 0, coords);
 		let output_timestamp = fs::read_timestamp(&output_path, MAP_FILE_META_VERSION);
+		let map_needed = Some(processed_timestamp) > output_timestamp;
 
-		if Some(processed_timestamp) <= output_timestamp {
+		let height_output_path = self.config.tile_path(TileKind::Heightmap, 0, coords);
+		let height_needed = self.config.height_layer
+			&& Some(processed_timestamp)
+				> fs::read_timestamp(&height_output_path, HEIGHTMAP_FILE_META_VERSION);
+
+		if !map_needed && !height_needed {
 			debug!(
 				"Skipping unchanged tile {}",
 				output_path
@@ -297,19 +339,38 @@ impl<'a> TileRenderer<'a> {
 			.rt
 			.block_on(self.load_region_group(processed_paths))
 			.with_context(|| format!("Region {coords:?} from previous step must be loadable"))?;
-		let mut image = image::RgbaImage::new(N, N);
-		Self::render_region(&mut image, &region_group);
 
-		fs::create_with_timestamp(
-			&output_path,
-			MAP_FILE_META_VERSION,
-			processed_timestamp,
-			|file| {
-				image
-					.write_to(file, self.config.tile_image_format())
-					.context("Failed to save image")
-			},
-		)?;
+		if map_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region(&mut image, &region_group);
+
+			fs::create_with_timestamp(
+				&output_path,
+				MAP_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
+
+		if height_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region_height(&mut image, region_group.center());
+
+			fs::create_with_timestamp(
+				&height_output_path,
+				HEIGHTMAP_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
 
 		Ok(true)
 	}
@@ -317,6 +378,9 @@ impl<'a> TileRenderer<'a> {
 	/// Runs the tile generation
 	pub fn run(self) -> Result<()> {
 		fs::create_dir_all(&self.config.tile_dir(TileKind::Map, 0))?;
+		if self.config.height_layer {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Heightmap, 0))?;
+		}
 
 		info!("Rendering map tiles...");
 

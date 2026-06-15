@@ -627,6 +627,7 @@ mod test {
 			edition: Edition::Bedrock,
 			input_dir: input_dir.to_path_buf(),
 			emit_overlays: Some(overlay_dir.to_path_buf()),
+			height_layer: true,
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
 			level_dat_old_path: input_dir.join("level.dat_old"),
@@ -688,6 +689,8 @@ mod test {
 
 		// A map tile must have been rendered for region (0, 0)
 		assert!(output_dir.join("map/0/r.0.0.png").is_file());
+		// The topographic height layer must have been generated too
+		assert!(output_dir.join("height/0/r.0.0.png").is_file());
 		assert!(output_dir.join("info.json").is_file());
 
 		// Overlay data must reflect the chunk's blocks and block entity

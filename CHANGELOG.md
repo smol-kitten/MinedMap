@@ -16,6 +16,11 @@
   `block_features.json`) during the regular render pass for both editions,
   without affecting the generated map tiles.
 
+- Added `--height-layer` option
+
+  Generates an additional topographic ("Topography") map layer that shades the
+  map by terrain elevation, selectable in the viewer.
+
 ## [2.8.0] - 2026-05-29
 
 ### Added

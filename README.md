@@ -152,6 +152,15 @@ into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
 
 All coordinates are chunk coordinates (block coordinate `>> 4`).
 
+### Topographic layer
+
+Passing `--height-layer` generates an additional `height` tile layer that shades
+the map by terrain elevation using a hypsometric tint (blue for low areas
+through green and brown up to white peaks). The layer can be toggled in the
+viewer as "Topography" and works for both Java and Bedrock Edition. It is
+derived from the same height data already computed for the regular map, so it
+does not change the normal map tiles.
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive
