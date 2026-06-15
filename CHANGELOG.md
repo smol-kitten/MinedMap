@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `--poi-markers` option
+
+  Collects the world's point-of-interest data (village meeting points, villager
+  beds and job sites, nether portals, lodestones) and shows them as toggleable
+  marker layers in the viewer (Java Edition).
+
 - Added `--cave-layer` option
 
   Generates a cave/underground map layer showing the floor of the topmost cave
