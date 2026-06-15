@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use tracing::{debug, info, warn};
 
 use super::common::*;
+use super::flat;
 use super::java_random;
 use super::overlay::{self, OverlayData};
 use super::texture;
@@ -99,6 +100,8 @@ struct SingleRegionData {
 	lightmap: image::GrayAlphaImage,
 	/// Textured layer intermediate data, if the textured layer is enabled
 	textured: Option<image::RgbaImage>,
+	/// Cave layer intermediate data, if the cave layer is enabled
+	cave: Option<image::RgbaImage>,
 	/// Processed entity intermediate data
 	entities: ProcessedEntities,
 	/// Accumulated overlay data for the region (overworld dimension)
@@ -119,6 +122,7 @@ impl Default for SingleRegionData {
 			chunks: Default::default(),
 			lightmap,
 			textured: None,
+			cave: None,
 			entities: Default::default(),
 			overlay: Default::default(),
 			has_unknown: false,
@@ -144,6 +148,8 @@ struct SingleRegionProcessor<'a> {
 	entities_path: PathBuf,
 	/// Textured tile output filename
 	textured_path: PathBuf,
+	/// Cave tile output filename
+	cave_path: PathBuf,
 	/// Timestamp of last modification of input file
 	input_timestamp: SystemTime,
 	/// Timestamp of last modification of processed region output file (if valid)
@@ -162,6 +168,8 @@ struct SingleRegionProcessor<'a> {
 	overlays_needed: bool,
 	/// True if the textured tile needs to be updated
 	textured_needed: bool,
+	/// True if the cave tile needs to be updated
+	cave_needed: bool,
 	/// Texture atlas for the textured layer, if enabled
 	texture_atlas: Option<&'a texture::TextureAtlas>,
 	/// How to render unrecognized blocks
@@ -190,11 +198,15 @@ impl<'a> SingleRegionProcessor<'a> {
 		let textured_path = processor.config.tile_path(TileKind::Textured, 0, coords);
 		let textured_timestamp = fs::read_timestamp(&textured_path, TEXTURED_FILE_META_VERSION);
 
+		let cave_path = processor.config.tile_path(TileKind::Cavemap, 0, coords);
+		let cave_timestamp = fs::read_timestamp(&cave_path, CAVEMAP_FILE_META_VERSION);
+
 		let output_needed = Some(input_timestamp) > output_timestamp;
 		let lightmap_needed = Some(input_timestamp) > lightmap_timestamp;
 		let entities_needed = Some(input_timestamp) > entities_timestamp;
 		let textured_needed =
 			processor.texture_atlas.is_some() && Some(input_timestamp) > textured_timestamp;
+		let cave_needed = processor.config.cave_layer && Some(input_timestamp) > cave_timestamp;
 
 		Ok(SingleRegionProcessor {
 			block_types: &processor.block_types,
@@ -205,6 +217,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			lightmap_path,
 			entities_path,
 			textured_path,
+			cave_path,
 			input_timestamp,
 			output_timestamp,
 			lightmap_timestamp,
@@ -214,6 +227,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			entities_needed,
 			overlays_needed: processor.config.wants_overlays(),
 			textured_needed,
+			cave_needed,
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
 			world_seed: processor.config.world_seed,
@@ -295,6 +309,25 @@ impl<'a> SingleRegionProcessor<'a> {
 		)
 	}
 
+	/// Saves a cave tile
+	///
+	/// The timestamp is the time of the last modification of the input region data.
+	fn save_cave(&self, cave: &image::RgbaImage) -> Result<()> {
+		if !self.cave_needed {
+			return Ok(());
+		}
+
+		fs::create_with_timestamp(
+			&self.cave_path,
+			CAVEMAP_FILE_META_VERSION,
+			self.input_timestamp,
+			|file| {
+				cave.write_to(file, self.image_format)
+					.context("Failed to save image")
+			},
+		)
+	}
+
 	/// Saves processed entity data
 	///
 	/// The timestamp is the time of the last modification of the input region data.
@@ -335,6 +368,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.lightmap_needed
 			&& !self.entities_needed
 			&& !self.textured_needed
+			&& !self.cave_needed
 		{
 			return Ok(());
 		}
@@ -343,6 +377,20 @@ impl<'a> SingleRegionProcessor<'a> {
 			world::chunk::Chunk::new(&chunk_data, self.block_types, self.biome_types)
 				.with_context(|| format!("Failed to decode chunk {chunk_coords:?}"))?;
 		data.has_unknown |= has_unknown;
+
+		if self.cave_needed
+			&& let Some(layer::LayerData {
+				blocks,
+				biomes,
+				depths,
+				..
+			}) = world::layer::cave_layer(&mut data.biome_list, &chunk).with_context(|| {
+				format!("Failed to process cave layer for chunk {chunk_coords:?}")
+			})? && let Some(cave) = data.cave.as_mut()
+		{
+			let chunk_image = flat::render_chunk(&blocks, &biomes, &depths, &data.biome_list);
+			overlay_chunk(cave, &chunk_image, chunk_coords);
+		}
 
 		if (self.output_needed || self.lightmap_needed || self.textured_needed)
 			&& let Some(layer::LayerData {
@@ -421,6 +469,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.entities_needed
 			&& !self.overlays_needed
 			&& !self.textured_needed
+			&& !self.cave_needed
 		{
 			debug!(
 				"Skipping unchanged region r.{}.{}.mca",
@@ -438,6 +487,10 @@ impl<'a> SingleRegionProcessor<'a> {
 		if let Some(atlas) = self.texture_atlas.filter(|_| self.textured_needed) {
 			let n = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32 * atlas.scale();
 			data.textured = Some(image::RgbaImage::new(n, n));
+		}
+		if self.cave_needed {
+			const N: u32 = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32;
+			data.cave = Some(image::RgbaImage::new(N, N));
 		}
 
 		if let Err(err) = self.process_chunks(&mut data) {
@@ -461,6 +514,7 @@ impl<'a> SingleRegionProcessor<'a> {
 
 		let overlay = std::mem::take(&mut data.overlay);
 		let textured = data.textured.take();
+		let cave = data.cave.take();
 
 		let processed_region = ProcessedRegion {
 			biome_list: data.biome_list.into_iter().collect(),
@@ -472,6 +526,9 @@ impl<'a> SingleRegionProcessor<'a> {
 		self.save_entities(&mut data.entities)?;
 		if let Some(textured) = textured {
 			self.save_textured(&textured)?;
+		}
+		if let Some(cave) = cave {
+			self.save_cave(&cave)?;
 		}
 
 		let status = if data.has_unknown {
@@ -539,6 +596,9 @@ impl<'a> RegionProcessor<'a> {
 		fs::create_dir_all(&self.config.entities_dir(0))?;
 		if self.texture_atlas.is_some() {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Textured, 0))?;
+		}
+		if self.config.cave_layer {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Cavemap, 0))?;
 		}
 
 		info!("Processing region files...");

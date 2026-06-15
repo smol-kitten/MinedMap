@@ -54,6 +54,10 @@ struct Features {
 	height: bool,
 	/// Biome/climate layer
 	biome: bool,
+	/// Cave/underground layer
+	cave: bool,
+	/// Point-of-interest marker layers
+	pois: bool,
 	/// Overlay data layers (heatmap, features)
 	overlays: bool,
 	/// Slime-chunk overlay layer
@@ -250,6 +254,8 @@ impl<'a> MetadataWriter<'a> {
 			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
 			height: self.config.height_layer,
 			biome: self.config.biome_layer,
+			cave: self.config.cave_layer,
+			pois: self.config.poi_markers,
 			overlays: self.config.overlay_layers,
 			slime: self.config.overlay_layers && self.config.world_seed.is_some(),
 			textured: self.config.block_textures.is_some(),

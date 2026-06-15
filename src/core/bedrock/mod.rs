@@ -34,6 +34,7 @@ use indexmap::IndexSet;
 
 use super::{
 	common::*,
+	flat,
 	metadata_writer::MetadataWriter,
 	overlay::{self, ChunkOverlayInfo, Dimension, OverlayData},
 	texture::{self, TextureAtlas},
@@ -205,6 +206,8 @@ struct ProcessedChunkResult {
 	chunk: Option<Box<ProcessedChunk>>,
 	/// Rendered textured chunk subtile, if the textured layer is enabled
 	textured: Option<image::RgbaImage>,
+	/// Rendered cave chunk subtile, if the cave layer is enabled
+	cave: Option<image::RgbaImage>,
 	/// Collected overlay info
 	overlay: ChunkOverlayInfo,
 }
@@ -231,6 +234,9 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 		.map(|dir| TextureAtlas::new(dir, config.texture_scale));
 	if atlas.is_some() {
 		fs::create_dir_all(&config.tile_dir(TileKind::Textured, 0))?;
+	}
+	if config.cave_layer {
+		fs::create_dir_all(&config.tile_dir(TileKind::Cavemap, 0))?;
 	}
 
 	info!("Processing Bedrock chunks...");
@@ -370,6 +376,7 @@ fn process_overworld_region(
 ) -> Result<overlay::DimensionOverlay> {
 	let want_overlays = config.wants_overlays();
 	let unknown = config.unknown_blocks;
+	let cave_layer = config.cave_layer;
 
 	let results: Vec<ProcessedChunkResult> = raw
 		.par_iter()
@@ -381,6 +388,11 @@ fn process_overworld_region(
 					render_textured_chunk(atlas, block_types, unknown, &sections, processed)
 				})
 			});
+			let cave = if cave_layer {
+				render_cave_chunk(block_types, unknown, &sections)
+			} else {
+				None
+			};
 			let overlay = if want_overlays {
 				chunk_overlay_info(block_types, &sections, raw_chunk.block_entities.as_deref())
 			} else {
@@ -391,6 +403,7 @@ fn process_overworld_region(
 				cz: raw_chunk.cz,
 				chunk,
 				textured,
+				cave,
 				overlay,
 			}
 		})
@@ -408,6 +421,10 @@ fn process_overworld_region(
 		image::RgbaImage::new(n, n)
 	});
 	let scale = atlas.map(|atlas| atlas.scale()).unwrap_or(1) as i64;
+	let mut cave_tile = cave_layer.then(|| {
+		let n = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32;
+		image::RgbaImage::new(n, n)
+	});
 
 	for result in results {
 		let chunk_coords = ChunkCoords {
@@ -421,6 +438,9 @@ fn process_overworld_region(
 				i64::from(chunk_coords.x.0) * BLOCKS_PER_CHUNK as i64 * scale,
 				i64::from(chunk_coords.z.0) * BLOCKS_PER_CHUNK as i64 * scale,
 			);
+		}
+		if let (Some(tile), Some(chunk_image)) = (cave_tile.as_mut(), &result.cave) {
+			overlay_chunk(tile, chunk_image, chunk_coords);
 		}
 		region.chunks[chunk_coords] = result.chunk;
 		if want_overlays {
@@ -446,7 +466,86 @@ fn process_overworld_region(
 		.with_context(|| format!("Failed to write textured tile {coords:?}"))?;
 	}
 
+	if let Some(tile) = cave_tile {
+		let path = config.tile_path(TileKind::Cavemap, 0, coords);
+		fs::create_with_timestamp(&path, CAVEMAP_FILE_META_VERSION, timestamp, |file| {
+			tile.write_to(file, config.tile_image_format())
+				.context("Failed to save cave tile")
+		})
+		.with_context(|| format!("Failed to write cave tile {coords:?}"))?;
+	}
+
 	Ok(region_overlay)
+}
+
+/// Renders a cave/underground chunk subtile from decoded Bedrock subchunks
+///
+/// Mirrors the Java cave-layer logic: in each column the first air gap below the
+/// solid surface/roof is treated as a cave, and the opaque block below it is the
+/// cave floor. Returns [None] if the chunk has no caves.
+fn render_cave_chunk(
+	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
+	sections: &BTreeMap<i32, SubChunkLayer>,
+) -> Option<image::RgbaImage> {
+	if sections.is_empty() {
+		return None;
+	}
+
+	let mut blocks = Box::new(layer::BlockArray::default());
+	let mut depths = Box::new(layer::DepthArray::default());
+	let mut found = false;
+
+	for x in 0..subchunk::SUBCHUNK_SIZE {
+		for z in 0..subchunk::SUBCHUNK_SIZE {
+			let xz = LayerBlockCoords {
+				x: BlockX::new(x),
+				z: BlockZ::new(z),
+			};
+			// 0 = above surface, 1 = inside roof, 2 = inside cave
+			let mut phase = 0u8;
+			'column: for (&section_y, sec) in sections.iter().rev() {
+				for y in (0..subchunk::SUBCHUNK_SIZE).rev() {
+					let color = sec
+						.name_at(block_offset(x, y, z))
+						.and_then(|name| blocks::block_color(name, block_types, unknown).0);
+					let opaque = color.is_some_and(|color| color.is(BlockFlag::Opaque));
+
+					match (phase, opaque) {
+						(0, true) => phase = 1,
+						(1, false) => phase = 2,
+						(2, true) => {
+							blocks[xz] = color;
+							depths[xz] = Some(BlockHeight(
+								section_y * subchunk::SUBCHUNK_SIZE as i32 + y as i32,
+							));
+							found = true;
+							break 'column;
+						}
+						_ => {}
+					}
+				}
+			}
+		}
+	}
+
+	if !found {
+		return None;
+	}
+
+	let mut biomes = Box::new(layer::BiomeArray::default());
+	for z in BlockZ::iter() {
+		for x in BlockX::iter() {
+			let xz = LayerBlockCoords { x, z };
+			if blocks[xz].is_some() {
+				biomes[xz] = NonZeroU16::new(1);
+			}
+		}
+	}
+
+	let mut biome_list = IndexSet::new();
+	biome_list.insert(*block_types_fallback_biome());
+	Some(flat::render_chunk(&blocks, &biomes, &depths, &biome_list))
 }
 
 /// Renders a textured chunk subtile from decoded Bedrock subchunks
@@ -706,6 +805,23 @@ mod test {
 		data
 	}
 
+	/// Builds a subchunk value (1 bit/block) that is mostly stone but has an air
+	/// gap (a cave) at y=14 in the column (0, 0)
+	fn cave_subchunk_value() -> Vec<u8> {
+		let mut data = vec![8u8, 1]; // version 8, 1 storage layer
+		data.push(1 << 1); // bits = 1, not runtime
+		// All stone (index 1) except block_offset(0, 14, 0) == 14 set to air (0)
+		let mut words = [0xFFFF_FFFFu32; 128];
+		words[0] &= !(1u32 << 14);
+		for w in &words {
+			data.extend_from_slice(&w.to_le_bytes());
+		}
+		data.extend_from_slice(&2u32.to_le_bytes()); // palette size
+		data.extend_from_slice(&palette_entry("minecraft:air"));
+		data.extend_from_slice(&palette_entry("minecraft:stone"));
+		data
+	}
+
 	/// Builds a block entity value (little-endian NBT) for a single block entity
 	fn block_entity_value(id: &str) -> Vec<u8> {
 		let mut data = vec![10u8, 0, 0]; // compound, empty name
@@ -745,10 +861,13 @@ mod test {
 			overlay_layers: true,
 			height_layer: true,
 			biome_layer: true,
+			cave_layer: true,
 			block_textures: Some(input_dir.join("textures")),
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,
 			world_seed: None,
+			poi_markers: false,
+			poi_dir: input_dir.join("poi"),
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
 			level_dat_old_path: input_dir.join("level.dat_old"),
@@ -758,6 +877,7 @@ mod test {
 			processed_dir,
 			viewer_info_path: output_dir.join("info.json"),
 			viewer_entities_path: output_dir.join("entities.json"),
+			viewer_pois_path: output_dir.join("pois.json"),
 			image_format: ImageFormat::Png,
 			sign_patterns: RegexSet::empty(),
 			sign_transforms: Vec::new(),
@@ -795,6 +915,9 @@ mod test {
 			let be_key = tag_key(Dimension::Overworld, 0, 0, TAG_BLOCK_ENTITIES);
 			db.put(&be_key, &block_entity_value("minecraft:chest"))
 				.unwrap();
+			// A second chunk with a cave column, to exercise the cave layer
+			let cave_key = subchunk_key(Dimension::Overworld, 1, 0, 0);
+			db.put(&cave_key, &cave_subchunk_value()).unwrap();
 			db.flush().unwrap();
 			db.close().unwrap();
 		}
@@ -822,6 +945,8 @@ mod test {
 		// The topographic height and biome layers must have been generated too
 		assert!(output_dir.join("height/0/r.0.0.png").is_file());
 		assert!(output_dir.join("biome/0/r.0.0.png").is_file());
+		// The cave layer must have been generated (chunk (1, 0) has a cave)
+		assert!(output_dir.join("cave/0/r.0.0.png").is_file());
 		assert!(output_dir.join("info.json").is_file());
 
 		// The textured layer must have been generated at 4x the resolution and
@@ -865,6 +990,7 @@ mod test {
 		assert_eq!(info["spawn"]["z"], -32);
 		assert_eq!(info["features"]["height"], true);
 		assert_eq!(info["features"]["biome"], true);
+		assert_eq!(info["features"]["cave"], true);
 		assert_eq!(info["features"]["overlays"], true);
 		assert_eq!(info["features"]["textured"], true);
 
