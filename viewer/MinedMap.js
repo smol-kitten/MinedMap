@@ -494,6 +494,7 @@ window.createMap = function () {
 			params.biome = parseInt(args['biome']);
 			params.cave = parseInt(args['cave']);
 			params.mobspawn = parseInt(args['mobspawn']);
+			params.contour = parseInt(args['contour']);
 			params.signs = parseInt(args['signs'] ?? '1');
 			params.marker = (args['marker'] ?? '').split(',').map((i) => +i);
 
@@ -572,6 +573,14 @@ window.createMap = function () {
 			overlayMaps['Mob spawning'] = mobspawnLayer;
 			if (params.mobspawn)
 				map.addLayer(mobspawnLayer);
+		}
+
+		let contourLayer;
+		if (features.contour) {
+			contourLayer = new MinedMapLayer(mipmaps, 'contour', tile_extension);
+			overlayMaps['Contours'] = contourLayer;
+			if (params.contour)
+				map.addLayer(contourLayer);
 		}
 
 		// Spawn-chunk boundary (the area kept loaded around the world spawn)
@@ -683,6 +692,8 @@ window.createMap = function () {
 				ret += '&cave=1';
 			if (features.mobspawn && map.hasLayer(mobspawnLayer))
 				ret += '&mobspawn=1';
+			if (features.contour && map.hasLayer(contourLayer))
+				ret += '&contour=1';
 			if (features.signs && !map.hasLayer(signLayer))
 				ret += '&signs=0';
 			if (params.marker) {
@@ -698,7 +709,7 @@ window.createMap = function () {
 
 		const refreshHash = function (ev) {
 			if (ev.type === 'layeradd' || ev.type === 'layerremove') {
-				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer && ev.layer !== caveLayer && ev.layer !== mobspawnLayer)
+				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer && ev.layer !== caveLayer && ev.layer !== mobspawnLayer && ev.layer !== contourLayer)
 					return;
 			}
 
@@ -760,6 +771,13 @@ window.createMap = function () {
 					map.addLayer(mobspawnLayer);
 				else
 					map.removeLayer(mobspawnLayer);
+			}
+
+			if (features.contour) {
+				if (params.contour)
+					map.addLayer(contourLayer);
+				else
+					map.removeLayer(contourLayer);
 			}
 
 			if (features.signs) {

@@ -56,6 +56,11 @@ pub const CAVEMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 /// Increase when the generation of mob-spawn tiles changes
 pub const MOBSPAWN_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap contour tile data version number
+///
+/// Increase when the generation of contour tiles changes
+pub const CONTOUR_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap textured tile data version number
 ///
 /// Increase when the generation of textured tiles changes (because of code
@@ -165,6 +170,8 @@ pub enum TileKind {
 	Cavemap,
 	/// Mob-spawn (spawn-proofing) tile
 	Mobspawn,
+	/// Contour (elevation lines) tile
+	Contourmap,
 	/// High-resolution textured map tile
 	Textured,
 }
@@ -267,6 +274,8 @@ pub struct Config {
 	pub cave_layer: bool,
 	/// Whether to generate the mob-spawn (spawn-proofing) layer
 	pub mob_spawn: bool,
+	/// Whether to generate the contour (elevation lines) layer
+	pub contour_layer: bool,
 	/// Resource pack directory for the textured layer, if requested
 	pub block_textures: Option<PathBuf>,
 	/// Per-block texture size (in pixels) for the textured layer
@@ -372,6 +381,7 @@ impl Config {
 			biome_layer: args.biome_layer,
 			cave_layer: args.cave_layer,
 			mob_spawn: args.mob_spawn,
+			contour_layer: args.contour_layer,
 			block_textures: args.block_textures.clone(),
 			texture_scale: args.texture_scale,
 			unknown_blocks: args.unknown_blocks.into(),
@@ -476,6 +486,7 @@ impl Config {
 			TileKind::Biomemap => "biome",
 			TileKind::Cavemap => "cave",
 			TileKind::Mobspawn => "mobspawn",
+			TileKind::Contourmap => "contour",
 			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");

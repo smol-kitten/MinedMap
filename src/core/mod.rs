@@ -136,6 +136,12 @@ pub struct Args {
 	/// affect the regular map tiles.
 	#[arg(long)]
 	pub mob_spawn: bool,
+	/// Generate a contour (elevation lines) map layer
+	///
+	/// Renders a `contour` tile layer drawing elevation isolines every 8 blocks,
+	/// selectable in the viewer. Does not affect the regular map tiles.
+	#[arg(long)]
+	pub contour_layer: bool,
 	/// Generate viewer overlays for generated structure bounding boxes (Java Edition)
 	///
 	/// Reads each chunk's structure data and writes the bounding boxes of

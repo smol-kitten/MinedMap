@@ -24,6 +24,9 @@ use crate::{
 /// Type for referencing loaded [ProcessedRegion] data
 type RegionRef = Arc<ProcessedRegion>;
 
+/// Width/height of a region tile in blocks (used for the height/contour grids)
+const HEIGHT_GRID_N: usize = BLOCKS_PER_CHUNK * CHUNKS_PER_REGION;
+
 /// Returns the index of the biome at a block coordinate
 ///
 /// The passed chunk and block coordinates relative to the center of the
@@ -234,14 +237,9 @@ impl<'a> TileRenderer<'a> {
 		}
 	}
 
-	/// Renders the topographic height layer for a region tile image
-	///
-	/// Heights are first collected into a full-region grid so that hillshading
-	/// can use the gradient between neighboring blocks (including across chunk
-	/// boundaries within the region).
-	fn render_region_height(image: &mut image::RgbaImage, region: &ProcessedRegion) {
-		/// Width/height of a region tile in blocks
-		const N: usize = BLOCKS_PER_CHUNK * CHUNKS_PER_REGION;
+	/// Collects the per-block heights of a region into a full-region grid
+	fn build_height_grid(region: &ProcessedRegion) -> Vec<Option<i32>> {
+		const N: usize = HEIGHT_GRID_N;
 
 		let mut heights = vec![None; N * N];
 		for (coords, chunk) in region.chunks.iter() {
@@ -262,6 +260,18 @@ impl<'a> TileRenderer<'a> {
 				}
 			}
 		}
+		heights
+	}
+
+	/// Renders the topographic height layer for a region tile image
+	///
+	/// Heights are first collected into a full-region grid so that hillshading
+	/// can use the gradient between neighboring blocks (including across chunk
+	/// boundaries within the region).
+	fn render_region_height(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		const N: usize = HEIGHT_GRID_N;
+
+		let heights = Self::build_height_grid(region);
 
 		for pz in 0..N {
 			for px in 0..N {
@@ -282,6 +292,43 @@ impl<'a> TileRenderer<'a> {
 				let shade = heightmap::hillshade(dzdx, dzdz);
 				let [r, g, b] = heightmap::shade_color(heightmap::height_color(height), shade);
 				image.put_pixel(px as u32, pz as u32, image::Rgba([r, g, b, 255]));
+			}
+		}
+	}
+
+	/// Renders the contour (elevation lines) layer for a region tile image
+	///
+	/// Draws an isoline wherever the elevation crosses a multiple of the contour
+	/// interval relative to the neighboring block to the east or south.
+	fn render_region_contour(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		const N: usize = HEIGHT_GRID_N;
+		/// Vertical spacing between contour lines, in blocks
+		const INTERVAL: i32 = 8;
+
+		let heights = Self::build_height_grid(region);
+
+		for pz in 0..N {
+			for px in 0..N {
+				let Some(height) = heights[pz * N + px] else {
+					continue;
+				};
+				let level = height.div_euclid(INTERVAL);
+
+				let neighbor_level = |dx: usize, dz: usize| -> Option<i32> {
+					let (nx, nz) = (px + dx, pz + dz);
+					if nx >= N || nz >= N {
+						return None;
+					}
+					heights[nz * N + nx].map(|h| h.div_euclid(INTERVAL))
+				};
+
+				let is_contour = neighbor_level(1, 0).is_some_and(|l| l != level)
+					|| neighbor_level(0, 1).is_some_and(|l| l != level);
+				if is_contour {
+					// Darker line every 4th interval (32 blocks) for major contours
+					let alpha = if level % 4 == 0 { 200 } else { 120 };
+					image.put_pixel(px as u32, pz as u32, image::Rgba([30, 30, 30, alpha]));
+				}
 			}
 		}
 	}
@@ -364,7 +411,12 @@ impl<'a> TileRenderer<'a> {
 			&& Some(processed_timestamp)
 				> fs::read_timestamp(&biome_output_path, BIOMEMAP_FILE_META_VERSION);
 
-		if !map_needed && !height_needed && !biome_needed {
+		let contour_output_path = self.config.tile_path(TileKind::Contourmap, 0, coords);
+		let contour_needed = self.config.contour_layer
+			&& Some(processed_timestamp)
+				> fs::read_timestamp(&contour_output_path, CONTOUR_FILE_META_VERSION);
+
+		if !map_needed && !height_needed && !biome_needed && !contour_needed {
 			debug!(
 				"Skipping unchanged tile {}",
 				output_path
@@ -436,6 +488,22 @@ impl<'a> TileRenderer<'a> {
 			)?;
 		}
 
+		if contour_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region_contour(&mut image, region_group.center());
+
+			fs::create_with_timestamp(
+				&contour_output_path,
+				CONTOUR_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
+
 		Ok(true)
 	}
 
@@ -447,6 +515,9 @@ impl<'a> TileRenderer<'a> {
 		}
 		if self.config.biome_layer {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Biomemap, 0))?;
+		}
+		if self.config.contour_layer {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Contourmap, 0))?;
 		}
 
 		info!("Rendering map tiles...");

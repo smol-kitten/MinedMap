@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added `--contour-layer` option
+
+  Generates a contour (elevation lines) map layer drawing isolines every 8
+  blocks, selectable in the viewer as "Contours".
+
 - Added `--mob-spawn` option
 
   Generates a mob-spawn (spawn-proofing) map layer highlighting surface blocks

@@ -867,6 +867,7 @@ mod test {
 			biome_layer: true,
 			cave_layer: true,
 			mob_spawn: false,
+			contour_layer: true,
 			block_textures: Some(input_dir.join("textures")),
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,
@@ -954,6 +955,8 @@ mod test {
 		assert!(output_dir.join("biome/0/r.0.0.png").is_file());
 		// The cave layer must have been generated (chunk (1, 0) has a cave)
 		assert!(output_dir.join("cave/0/r.0.0.png").is_file());
+		// The contour layer is rendered from the processed regions
+		assert!(output_dir.join("contour/0/r.0.0.png").is_file());
 		assert!(output_dir.join("info.json").is_file());
 
 		// The textured layer must have been generated at 4x the resolution and
@@ -998,6 +1001,7 @@ mod test {
 		assert_eq!(info["features"]["height"], true);
 		assert_eq!(info["features"]["biome"], true);
 		assert_eq!(info["features"]["cave"], true);
+		assert_eq!(info["features"]["contour"], true);
 		assert_eq!(info["features"]["overlays"], true);
 		assert_eq!(info["features"]["textured"], true);
 
