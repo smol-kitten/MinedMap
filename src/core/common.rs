@@ -266,6 +266,10 @@ pub struct Config {
 	pub unknown_blocks: crate::resource::UnknownBlockMode,
 	/// World seed, used for the slime-chunk overlay (Java Edition only)
 	pub world_seed: Option<i64>,
+	/// Whether to collect points of interest for viewer marker layers
+	pub poi_markers: bool,
+	/// Path of input POI directory
+	pub poi_dir: PathBuf,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -284,6 +288,8 @@ pub struct Config {
 	pub viewer_info_path: PathBuf,
 	/// Path of viewer entities file
 	pub viewer_entities_path: PathBuf,
+	/// Path of viewer POI file
+	pub viewer_pois_path: PathBuf,
 	/// Format of generated map tiles
 	pub image_format: ImageFormat,
 	/// Sign text filter patterns
@@ -306,6 +312,16 @@ impl Config {
 			region_dir = [&args.input_dir, Path::new("region")].iter().collect();
 		}
 
+		let mut poi_dir: PathBuf = [
+			&args.input_dir,
+			Path::new("dimensions/minecraft/overworld/poi"),
+		]
+		.iter()
+		.collect();
+		if !poi_dir.is_dir() {
+			poi_dir = [&args.input_dir, Path::new("poi")].iter().collect();
+		}
+
 		let level_dat_path: PathBuf = [&args.input_dir, Path::new("level.dat")].iter().collect();
 		let level_dat_old_path: PathBuf = [&args.input_dir, Path::new("level.dat_old")]
 			.iter()
@@ -317,6 +333,7 @@ impl Config {
 		let viewer_entities_path = [&args.output_dir, Path::new("entities.json")]
 			.iter()
 			.collect();
+		let viewer_pois_path = [&args.output_dir, Path::new("pois.json")].iter().collect();
 
 		let sign_patterns = Self::sign_patterns(args).context("Failed to parse sign patterns")?;
 		let sign_transforms =
@@ -342,6 +359,8 @@ impl Config {
 			texture_scale: args.texture_scale,
 			unknown_blocks: args.unknown_blocks.into(),
 			world_seed,
+			poi_markers: args.poi_markers,
+			poi_dir,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -351,6 +370,7 @@ impl Config {
 			entities_path_final,
 			viewer_info_path,
 			viewer_entities_path,
+			viewer_pois_path,
 			image_format: args.image_format,
 			sign_patterns,
 			sign_transforms,

@@ -199,6 +199,14 @@ floor of the topmost cave found below the surface (the first air gap under solid
 ground), so cave systems near the surface become visible. Works for both Java
 and Bedrock Edition.
 
+### Points of interest
+
+Passing `--poi-markers` reads the world's point-of-interest data (Java Edition,
+stored in the `poi` directory) and writes markers shown in the viewer as
+toggleable layers: village meeting points, villager beds and job sites, nether
+portals and lodestones. This makes it easy to locate villages and other notable
+spots on the map.
+
 ### Modded and unknown blocks
 
 By default, blocks that MinedMap does not recognize (for example blocks added by

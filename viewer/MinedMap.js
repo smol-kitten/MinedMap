@@ -339,6 +339,47 @@ async function loadOverlays(groups) {
 	}
 }
 
+// Visual style and display order of POI marker categories
+const POI_CATEGORIES = [
+	['village', 'Villages', '#ffcc00', 5],
+	['portal', 'Portals', '#9933cc', 4],
+	['jobsite', 'Job sites', '#3399ff', 3],
+	['home', 'Beds', '#ff6688', 3],
+	['lodestone', 'Lodestones', '#cccccc', 4],
+	['other', 'Other POIs', '#88cc88', 3],
+];
+
+async function loadPois(groups) {
+	let data;
+	try {
+		const response = await fetch('data/pois.json', {cache: 'no-store'});
+		if (!response.ok)
+			throw new Error('Failed to fetch pois.json');
+		data = await response.json();
+	} catch (err) {
+		console.error('Failed to load POI data', err);
+		return;
+	}
+
+	for (const [key, name, color, radius] of POI_CATEGORIES) {
+		const group = groups[name];
+		if (!group)
+			continue;
+		for (const [x, z] of data[key] || []) {
+			L.circleMarker([-z, x], {
+				radius,
+				color: '#000000',
+				weight: 1,
+				opacity: 0.6,
+				fillColor: color,
+				fillOpacity: 0.9,
+			})
+				.bindTooltip(`${name.replace(/s$/, '')} (${x}, ${z})`)
+				.addTo(group);
+		}
+	}
+}
+
 async function loadSigns(signLayer) {
 	const response = await fetch('data/entities.json', {cache: 'no-store'});
 	const res = await response.json();
@@ -530,6 +571,17 @@ window.createMap = function () {
 			if (ev.layer === gridLayer)
 				redrawGrid();
 		});
+
+		// Point-of-interest marker layers
+		if (features.pois) {
+			const poiGroups = {};
+			for (const [, name] of POI_CATEGORIES) {
+				const group = L.layerGroup();
+				poiGroups[name] = group;
+				overlayMaps[name] = group;
+			}
+			loadPois(poiGroups);
+		}
 
 		let signLayer;
 		if (features.signs) {

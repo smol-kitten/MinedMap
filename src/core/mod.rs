@@ -8,6 +8,7 @@ mod heightmap;
 mod java_random;
 mod metadata_writer;
 mod overlay;
+mod poi;
 mod region_group;
 mod region_processor;
 mod texture;
@@ -128,6 +129,12 @@ pub struct Args {
 	/// regular map tiles.
 	#[arg(long)]
 	pub cave_layer: bool,
+	/// Generate viewer marker layers for points of interest (Java Edition)
+	///
+	/// Reads the world's POI data (village meeting points, villager beds and job
+	/// sites, nether portals, lodestones) and writes markers shown in the viewer.
+	#[arg(long)]
+	pub poi_markers: bool,
 	/// Generate a high-resolution textured map layer from a resource pack
 	///
 	/// Samples the top-face block textures from the given resource pack
@@ -197,6 +204,10 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	MetadataWriter::new(config, &tiles).run()?;
 
 	write_overlays(config, overlays)?;
+
+	if config.poi_markers {
+		poi::PoiCollector::new(config).run()?;
+	}
 
 	Ok(())
 }
