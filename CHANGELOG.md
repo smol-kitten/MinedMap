@@ -16,6 +16,12 @@
   `block_features.json`) during the regular render pass for both editions,
   without affecting the generated map tiles.
 
+- Added `--overlay-layers` option
+
+  Writes the per-chunk overlay data into the viewer output and exposes it as
+  toggleable viewer layers (inhabited-time heatmap, built-up areas, rails,
+  farmland and portals).
+
 - Added `--height-layer` option
 
   Generates an additional topographic ("Topography") map layer that shades the

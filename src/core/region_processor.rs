@@ -188,7 +188,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			output_needed,
 			lightmap_needed,
 			entities_needed,
-			overlays_needed: processor.config.emit_overlays.is_some(),
+			overlays_needed: processor.config.wants_overlays(),
 			image_format: processor.config.tile_image_format(),
 		})
 	}

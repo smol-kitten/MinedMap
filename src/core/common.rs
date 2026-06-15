@@ -179,6 +179,8 @@ pub struct Config {
 	pub input_dir: PathBuf,
 	/// Directory to emit overlay data to, if requested
 	pub emit_overlays: Option<PathBuf>,
+	/// Whether to generate viewer overlay layers from the overlay data
+	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
 	pub height_layer: bool,
 	/// Path of input region directory
@@ -243,6 +245,7 @@ impl Config {
 			edition,
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
+			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			region_dir,
 			level_dat_path,
@@ -328,6 +331,28 @@ impl Config {
 		};
 		let dir = format!("{prefix}/{level}");
 		[&self.output_dir, Path::new(&dir)].iter().collect()
+	}
+
+	/// Returns whether per-chunk overlay data should be collected
+	pub fn wants_overlays(&self) -> bool {
+		self.emit_overlays.is_some() || self.overlay_layers
+	}
+
+	/// Returns the directory viewer overlay layers are written to
+	pub fn overlay_layers_dir(&self) -> PathBuf {
+		[&self.output_dir, Path::new("overlays")].iter().collect()
+	}
+
+	/// Returns the directories the overlay data files should be written to
+	pub fn overlay_output_dirs(&self) -> Vec<PathBuf> {
+		let mut dirs = Vec::new();
+		if let Some(dir) = &self.emit_overlays {
+			dirs.push(dir.clone());
+		}
+		if self.overlay_layers {
+			dirs.push(self.overlay_layers_dir());
+		}
+		dirs
 	}
 
 	/// Returns the file extension for the configured image format

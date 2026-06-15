@@ -203,27 +203,29 @@ impl OverlayData {
 		}
 	}
 
-	/// Writes the `inhabited_heatmap.json` and `block_features.json` files
-	pub fn write(mut self, dir: &Path) -> Result<()> {
+	/// Writes the `inhabited_heatmap.json` and `block_features.json` files into
+	/// each of the given directories
+	pub fn write(mut self, dirs: &[&Path]) -> Result<()> {
 		self.sort();
-
-		fs::create_dir_all(dir)?;
 
 		let heatmap = HeatmapOutput {
 			overworld: &self.overworld.inhabited,
 			nether: &self.nether.inhabited,
 			end: &self.end.inhabited,
 		};
-		write_json(&dir.join("inhabited_heatmap.json"), &heatmap)
-			.context("Failed to write inhabited_heatmap.json")?;
-
 		let features = FeaturesOutput {
 			overworld: (&self.overworld).into(),
 			nether: (&self.nether).into(),
 			end: (&self.end).into(),
 		};
-		write_json(&dir.join("block_features.json"), &features)
-			.context("Failed to write block_features.json")?;
+
+		for dir in dirs {
+			fs::create_dir_all(dir)?;
+			write_json(&dir.join("inhabited_heatmap.json"), &heatmap)
+				.context("Failed to write inhabited_heatmap.json")?;
+			write_json(&dir.join("block_features.json"), &features)
+				.context("Failed to write block_features.json")?;
+		}
 
 		Ok(())
 	}

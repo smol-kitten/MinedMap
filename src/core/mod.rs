@@ -99,6 +99,13 @@ pub struct Args {
 	/// regular render pass. Does not affect the generated map tiles.
 	#[arg(long, value_name = "DIR")]
 	pub emit_overlays: Option<PathBuf>,
+	/// Generate viewer overlay layers from the per-chunk overlay data
+	///
+	/// Writes the overlay data into the output directory and exposes it in the
+	/// viewer as toggleable layers (inhabited-time heatmap, built-up areas,
+	/// rails, farmland and portals).
+	#[arg(long)]
+	pub overlay_layers: bool,
 	/// Generate an additional topographic (height) map layer
 	///
 	/// Renders a `height` tile layer that shades the map by terrain elevation,
@@ -156,11 +163,19 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	EntityCollector::new(config, &regions).run()?;
 	MetadataWriter::new(config, &tiles).run()?;
 
-	if let Some(dir) = &config.emit_overlays {
-		overlays.write(dir)?;
-	}
+	write_overlays(config, overlays)?;
 
 	Ok(())
+}
+
+/// Writes collected overlay data to all configured destinations
+fn write_overlays(config: &Config, overlays: overlay::OverlayData) -> Result<()> {
+	let dirs = config.overlay_output_dirs();
+	if dirs.is_empty() {
+		return Ok(());
+	}
+	let dir_refs: Vec<&std::path::Path> = dirs.iter().map(PathBuf::as_path).collect();
+	overlays.write(&dir_refs)
 }
 
 /// Creates a file watcher for the

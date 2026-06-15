@@ -254,8 +254,10 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	let tiles = TileMipmapper::new(config, &overworld_regions).run()?;
 	MetadataWriter::new(config, &tiles).run()?;
 
-	if let Some(dir) = &config.emit_overlays {
-		overlays.write(dir)?;
+	let overlay_dirs = config.overlay_output_dirs();
+	if !overlay_dirs.is_empty() {
+		let dir_refs: Vec<&Path> = overlay_dirs.iter().map(PathBuf::as_path).collect();
+		overlays.write(&dir_refs)?;
 	}
 
 	Ok(())
@@ -347,7 +349,7 @@ fn process_overworld_region(
 	raw: &[RawChunk],
 	timestamp: SystemTime,
 ) -> Result<overlay::DimensionOverlay> {
-	let want_overlays = config.emit_overlays.is_some();
+	let want_overlays = config.wants_overlays();
 
 	let results: Vec<ProcessedChunkResult> = raw
 		.par_iter()
@@ -627,6 +629,7 @@ mod test {
 			edition: Edition::Bedrock,
 			input_dir: input_dir.to_path_buf(),
 			emit_overlays: Some(overlay_dir.to_path_buf()),
+			overlay_layers: true,
 			height_layer: true,
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
@@ -720,6 +723,12 @@ mod test {
 			serde_json::from_slice(&std::fs::read(output_dir.join("info.json")).unwrap()).unwrap();
 		assert_eq!(info["spawn"]["x"], 64);
 		assert_eq!(info["spawn"]["z"], -32);
+		assert_eq!(info["features"]["height"], true);
+		assert_eq!(info["features"]["overlays"], true);
+
+		// Overlay layer data must also be written into the viewer output dir
+		assert!(output_dir.join("overlays/block_features.json").is_file());
+		assert!(output_dir.join("overlays/inhabited_heatmap.json").is_file());
 
 		let _ = std::fs::remove_dir_all(&base);
 	}

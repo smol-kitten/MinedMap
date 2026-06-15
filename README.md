@@ -152,6 +152,10 @@ into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
 
 All coordinates are chunk coordinates (block coordinate `>> 4`).
 
+Passing `--overlay-layers` additionally writes this data into the viewer's
+output directory and exposes it as toggleable viewer layers: an inhabited-time
+heatmap, built-up areas, and rail / farmland / portal chunk markers.
+
 ### Topographic layer
 
 Passing `--height-layer` generates an additional `height` tile layer that shades

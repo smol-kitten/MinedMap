@@ -268,6 +268,73 @@ function createSign(sign, back) {
 	return wrapper;
 }
 
+// Leaflet bounds covering a single chunk (lat = -z, lng = x)
+function chunkBounds(chunkX, chunkZ) {
+	const x = chunkX * 16;
+	const z = chunkZ * 16;
+	return [[-z, x], [-(z + 16), x + 16]];
+}
+
+// Adds a colored rectangle for each [chunkX, chunkZ] entry to a layer group
+function addChunkRects(group, entries, style) {
+	for (const entry of entries) {
+		L.rectangle(chunkBounds(entry[0], entry[1]), style).addTo(group);
+	}
+}
+
+// Adds chunk rectangles with an opacity scaled by a per-entry value
+function addHeatRects(group, entries, valueIndex, color) {
+	let max = 0;
+	for (const entry of entries)
+		max = Math.max(max, entry[valueIndex]);
+	const scale = max > 0 ? Math.log(max + 1) : 1;
+
+	for (const entry of entries) {
+		const t = Math.log(entry[valueIndex] + 1) / scale;
+		L.rectangle(chunkBounds(entry[0], entry[1]), {
+			stroke: false,
+			fillColor: color,
+			fillOpacity: 0.15 + 0.6 * t,
+		}).addTo(group);
+	}
+}
+
+async function loadOverlays(groups) {
+	const fetchJSON = async (path) => {
+		const response = await fetch(path, {cache: 'no-store'});
+		if (!response.ok)
+			throw new Error(`Failed to fetch ${path}`);
+		return response.json();
+	};
+
+	try {
+		const [heatmap, features] = await Promise.all([
+			fetchJSON('data/overlays/inhabited_heatmap.json'),
+			fetchJSON('data/overlays/block_features.json'),
+		]);
+
+		const inhabited = heatmap.overworld || [];
+		addHeatRects(groups['Inhabited time'], inhabited, 2, '#cc2222');
+
+		const f = features.overworld || {};
+		addHeatRects(groups['Built-up areas'], f.built || [], 2, '#ee8800');
+		addChunkRects(groups['Rails'], f.rail || [], {
+			stroke: false, fillColor: '#3366cc', fillOpacity: 0.6,
+		});
+		addChunkRects(groups['Farmland'], f.farmland || [], {
+			stroke: false, fillColor: '#88aa33', fillOpacity: 0.6,
+		});
+		addChunkRects(groups['Portals'], f.nether_portal || [], {
+			stroke: false, fillColor: '#9933cc', fillOpacity: 0.6,
+		});
+		addChunkRects(groups['Portals'], f.end_portal || [], {
+			stroke: false, fillColor: '#33cccc', fillOpacity: 0.6,
+		});
+	} catch (err) {
+		console.error('Failed to load overlay data', err);
+	}
+}
+
 async function loadSigns(signLayer) {
 	const response = await fetch('data/entities.json', {cache: 'no-store'});
 	const res = await response.json();
@@ -391,6 +458,19 @@ window.createMap = function () {
 			overlayMaps['Topography'] = heightLayer;
 			if (params.height)
 				map.addLayer(heightLayer);
+		}
+
+		if (features.overlays) {
+			const overlayGroups = {
+				'Inhabited time': L.layerGroup(),
+				'Built-up areas': L.layerGroup(),
+				'Rails': L.layerGroup(),
+				'Farmland': L.layerGroup(),
+				'Portals': L.layerGroup(),
+			};
+			for (const [name, group] of Object.entries(overlayGroups))
+				overlayMaps[name] = group;
+			loadOverlays(overlayGroups);
 		}
 
 		let signLayer;

@@ -52,6 +52,8 @@ struct Features {
 	signs: bool,
 	/// Topographic height layer
 	height: bool,
+	/// Overlay data layers (heatmap, features)
+	overlays: bool,
 }
 
 /// Viewer metadata JSON data structure
@@ -241,6 +243,7 @@ impl<'a> MetadataWriter<'a> {
 		let features = Features {
 			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
 			height: self.config.height_layer,
+			overlays: self.config.overlay_layers,
 		};
 
 		let mut metadata = Metadata {
