@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added `--cave-layer` option
+
+  Generates a cave/underground map layer showing the floor of the topmost cave
+  in each column, selectable in the viewer as "Caves".
+
 - Added a slime-chunk overlay layer
 
   When `--overlay-layers` is used on a Java Edition world, slime chunks are

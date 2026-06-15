@@ -45,6 +45,12 @@ pub const HEIGHTMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 /// changes or updated biome color data)
 pub const BIOMEMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap cave map tile data version number
+///
+/// Increase when the generation of cave map tiles changes (because of code
+/// changes or updated block color data)
+pub const CAVEMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap textured tile data version number
 ///
 /// Increase when the generation of textured tiles changes (because of code
@@ -150,6 +156,8 @@ pub enum TileKind {
 	Heightmap,
 	/// Biome map tile for the biome/climate layer
 	Biomemap,
+	/// Cave map tile for the underground layer
+	Cavemap,
 	/// High-resolution textured map tile
 	Textured,
 }
@@ -248,6 +256,8 @@ pub struct Config {
 	pub height_layer: bool,
 	/// Whether to generate the biome/climate layer
 	pub biome_layer: bool,
+	/// Whether to generate the cave/underground layer
+	pub cave_layer: bool,
 	/// Resource pack directory for the textured layer, if requested
 	pub block_textures: Option<PathBuf>,
 	/// Per-block texture size (in pixels) for the textured layer
@@ -327,6 +337,7 @@ impl Config {
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
+			cave_layer: args.cave_layer,
 			block_textures: args.block_textures.clone(),
 			texture_scale: args.texture_scale,
 			unknown_blocks: args.unknown_blocks.into(),
@@ -424,6 +435,7 @@ impl Config {
 			TileKind::Lightmap => "light",
 			TileKind::Heightmap => "height",
 			TileKind::Biomemap => "biome",
+			TileKind::Cavemap => "cave",
 			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");

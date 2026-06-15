@@ -415,6 +415,7 @@ window.createMap = function () {
 			params.light = parseInt(args['light']);
 			params.height = parseInt(args['height']);
 			params.biome = parseInt(args['biome']);
+			params.cave = parseInt(args['cave']);
 			params.signs = parseInt(args['signs'] ?? '1');
 			params.marker = (args['marker'] ?? '').split(',').map((i) => +i);
 
@@ -477,6 +478,14 @@ window.createMap = function () {
 			overlayMaps['Biomes'] = biomeLayer;
 			if (params.biome)
 				map.addLayer(biomeLayer);
+		}
+
+		let caveLayer;
+		if (features.cave) {
+			caveLayer = new MinedMapLayer(mipmaps, 'cave', tile_extension);
+			overlayMaps['Caves'] = caveLayer;
+			if (params.cave)
+				map.addLayer(caveLayer);
 		}
 
 		if (features.overlays) {
@@ -553,6 +562,8 @@ window.createMap = function () {
 				ret += '&height=1';
 			if (features.biome && map.hasLayer(biomeLayer))
 				ret += '&biome=1';
+			if (features.cave && map.hasLayer(caveLayer))
+				ret += '&cave=1';
 			if (features.signs && !map.hasLayer(signLayer))
 				ret += '&signs=0';
 			if (params.marker) {
@@ -568,7 +579,7 @@ window.createMap = function () {
 
 		const refreshHash = function (ev) {
 			if (ev.type === 'layeradd' || ev.type === 'layerremove') {
-				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer)
+				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer && ev.layer !== caveLayer)
 					return;
 			}
 
@@ -616,6 +627,13 @@ window.createMap = function () {
 					map.addLayer(biomeLayer);
 				else
 					map.removeLayer(biomeLayer);
+			}
+
+			if (features.cave) {
+				if (params.cave)
+					map.addLayer(caveLayer);
+				else
+					map.removeLayer(caveLayer);
 			}
 
 			if (features.signs) {

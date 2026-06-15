@@ -233,3 +233,64 @@ pub fn top_layer(
 
 	Ok(Some(ret))
 }
+
+/// Fills in a [LayerData] with the floor of the topmost cave in each column
+///
+/// For each (X, Z) coordinate, the column is scanned downwards: after passing
+/// through the surface/roof (the first run of opaque blocks) the first air gap
+/// is treated as a cave, and the next opaque block below it is recorded as the
+/// cave floor. Columns without a cave under solid ground stay empty.
+pub fn cave_layer(biome_list: &mut IndexSet<Biome>, chunk: &Chunk) -> Result<Option<LayerData>> {
+	if chunk.is_empty() {
+		return Ok(None);
+	}
+
+	/// Column has not encountered any opaque block yet (still above the surface)
+	const PHASE_ABOVE: u8 = 0;
+	/// Column is inside the solid surface/roof
+	const PHASE_ROOF: u8 = 1;
+	/// Column has entered a cave (air below the roof), looking for the floor
+	const PHASE_CAVE: u8 = 2;
+
+	let mut ret = LayerData::default();
+	let mut phase = LayerBlockArray::<u8>::default();
+
+	for section in chunk.sections().rev() {
+		for y in BlockY::iter().rev() {
+			for z in BlockZ::iter() {
+				for x in BlockX::iter() {
+					let xz = LayerBlockCoords { x, z };
+					if ret.depths[xz].is_some() {
+						continue;
+					}
+
+					let coords = SectionBlockCoords { xz, y };
+					let block = section.section.block_at(coords)?;
+					let opaque = block
+						.is_some_and(|block_type| block_type.block_color.is(BlockFlag::Opaque));
+
+					match (phase[xz], opaque) {
+						(PHASE_ABOVE, true) => phase[xz] = PHASE_ROOF,
+						(PHASE_ROOF, false) => phase[xz] = PHASE_CAVE,
+						(PHASE_CAVE, true) => {
+							ret.blocks[xz] = Some(block.unwrap().block_color);
+
+							let biome = section.biomes.biome_at(section.y, coords)?;
+							let (biome_index, _) = biome_list.insert_full(*biome);
+							ret.biomes[xz] = NonZeroU16::new(
+								(biome_index + 1)
+									.try_into()
+									.expect("biome index not in range"),
+							);
+
+							ret.depths[xz] = Some(BlockHeight::new(section.y, y)?);
+						}
+						_ => {}
+					}
+				}
+			}
+		}
+	}
+
+	Ok(Some(ret))
+}

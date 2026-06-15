@@ -3,6 +3,7 @@
 mod bedrock;
 mod common;
 mod entity_collector;
+mod flat;
 mod heightmap;
 mod java_random;
 mod metadata_writer;
@@ -120,6 +121,13 @@ pub struct Args {
 	/// viewer. Does not affect the regular map tiles.
 	#[arg(long)]
 	pub biome_layer: bool,
+	/// Generate an additional cave/underground map layer
+	///
+	/// Renders a `cave` tile layer showing the floor of the topmost cave under
+	/// the surface in each column, selectable in the viewer. Does not affect the
+	/// regular map tiles.
+	#[arg(long)]
+	pub cave_layer: bool,
 	/// Generate a high-resolution textured map layer from a resource pack
 	///
 	/// Samples the top-face block textures from the given resource pack
