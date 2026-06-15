@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use tracing::{debug, info, warn};
 
 use super::common::*;
+use super::overlay::{self, OverlayData};
 use crate::{
 	io::{fs, storage},
 	resource,
@@ -94,6 +95,8 @@ struct SingleRegionData {
 	lightmap: image::GrayAlphaImage,
 	/// Processed entity intermediate data
 	entities: ProcessedEntities,
+	/// Accumulated overlay data for the region (overworld dimension)
+	overlay: overlay::DimensionOverlay,
 	/// True if any unknown block or biome types were encountered during processing
 	has_unknown: bool,
 }
@@ -109,6 +112,7 @@ impl Default for SingleRegionData {
 			chunks: Default::default(),
 			lightmap,
 			entities: Default::default(),
+			overlay: Default::default(),
 			has_unknown: false,
 		}
 	}
@@ -144,6 +148,8 @@ struct SingleRegionProcessor<'a> {
 	lightmap_needed: bool,
 	/// True if entity output file needs to be updated
 	entities_needed: bool,
+	/// True if per-chunk overlay data should be collected
+	overlays_needed: bool,
 	/// Format of generated map tiles
 	image_format: image::ImageFormat,
 }
@@ -182,6 +188,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			output_needed,
 			lightmap_needed,
 			entities_needed,
+			overlays_needed: processor.config.emit_overlays.is_some(),
 			image_format: processor.config.tile_image_format(),
 		})
 	}
@@ -266,6 +273,17 @@ impl<'a> SingleRegionProcessor<'a> {
 		chunk_coords: ChunkCoords,
 		chunk_data: world::de::Chunk,
 	) -> Result<()> {
+		if self.overlays_needed {
+			let info = overlay::java_chunk_overlay_info(&chunk_data);
+			let abs_x = self.coords.x * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.x.0);
+			let abs_z = self.coords.z * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.z.0);
+			data.overlay.add(abs_x, abs_z, &info);
+		}
+
+		if !self.output_needed && !self.lightmap_needed && !self.entities_needed {
+			return Ok(());
+		}
+
 		let (chunk, has_unknown) =
 			world::chunk::Chunk::new(&chunk_data, self.block_types, self.biome_types)
 				.with_context(|| format!("Failed to decode chunk {chunk_coords:?}"))?;
@@ -312,13 +330,17 @@ impl<'a> SingleRegionProcessor<'a> {
 	}
 
 	/// Processes the region
-	fn run(&self) -> Result<RegionProcessorStatus> {
-		if !self.output_needed && !self.lightmap_needed && !self.entities_needed {
+	fn run(&self) -> Result<(RegionProcessorStatus, overlay::DimensionOverlay)> {
+		if !self.output_needed
+			&& !self.lightmap_needed
+			&& !self.entities_needed
+			&& !self.overlays_needed
+		{
 			debug!(
 				"Skipping unchanged region r.{}.{}.mca",
 				self.coords.x, self.coords.z
 			);
-			return Ok(RegionProcessorStatus::Skipped);
+			return Ok((RegionProcessorStatus::Skipped, Default::default()));
 		}
 
 		debug!(
@@ -337,15 +359,17 @@ impl<'a> SingleRegionProcessor<'a> {
 					"Failed to process region {:?}, using old data: {:?}",
 					self.coords, err
 				);
-				return Ok(RegionProcessorStatus::ErrorOk);
+				return Ok((RegionProcessorStatus::ErrorOk, Default::default()));
 			} else {
 				warn!(
 					"Failed to process region {:?}, no old data available: {:?}",
 					self.coords, err
 				);
-				return Ok(RegionProcessorStatus::ErrorMissing);
+				return Ok((RegionProcessorStatus::ErrorMissing, Default::default()));
 			}
 		}
+
+		let overlay = std::mem::take(&mut data.overlay);
 
 		let processed_region = ProcessedRegion {
 			biome_list: data.biome_list.into_iter().collect(),
@@ -356,11 +380,12 @@ impl<'a> SingleRegionProcessor<'a> {
 		self.save_lightmap(&data.lightmap)?;
 		self.save_entities(&mut data.entities)?;
 
-		Ok(if data.has_unknown {
+		let status = if data.has_unknown {
 			RegionProcessorStatus::OkWithUnknown
 		} else {
 			RegionProcessorStatus::Ok
-		})
+		};
+		Ok((status, overlay))
 	}
 }
 
@@ -393,14 +418,19 @@ impl<'a> RegionProcessor<'a> {
 	}
 
 	/// Processes a single region file
-	fn process_region(&self, coords: TileCoords) -> Result<RegionProcessorStatus> {
+	fn process_region(
+		&self,
+		coords: TileCoords,
+	) -> Result<(RegionProcessorStatus, overlay::DimensionOverlay)> {
 		SingleRegionProcessor::new(self, coords)?.run()
 	}
 
 	/// Iterates over all region files of a Minecraft save directory
 	///
-	/// Returns a list of the coordinates of all processed regions
-	pub fn run(self) -> Result<Vec<TileCoords>> {
+	/// Returns a list of the coordinates of all processed regions, together
+	/// with the accumulated overlay data (empty unless `--emit-overlays` was
+	/// passed).
+	pub fn run(self) -> Result<(Vec<TileCoords>, OverlayData)> {
 		use RegionProcessorStatus as Status;
 
 		fs::create_dir_all(&self.config.processed_dir)?;
@@ -411,9 +441,10 @@ impl<'a> RegionProcessor<'a> {
 
 		let (region_send, region_recv) = mpsc::channel();
 		let (status_send, status_recv) = mpsc::channel();
+		let (overlay_send, overlay_recv) = mpsc::channel();
 
 		self.collect_regions()?.par_iter().try_for_each(|&coords| {
-			let ret = self
+			let (ret, region_overlay) = self
 				.process_region(coords)
 				.with_context(|| format!("Failed to process region {coords:?}"))?;
 
@@ -422,6 +453,7 @@ impl<'a> RegionProcessor<'a> {
 			}
 
 			status_send.send(ret).unwrap();
+			overlay_send.send(region_overlay).unwrap();
 
 			anyhow::Ok(())
 		})?;
@@ -430,6 +462,14 @@ impl<'a> RegionProcessor<'a> {
 		let mut regions: Vec<_> = region_recv.into_iter().collect();
 
 		drop(status_send);
+
+		// Java rendering only covers the overworld dimension, so all overlay
+		// data is merged into the overworld.
+		drop(overlay_send);
+		let mut overlays = OverlayData::default();
+		for region_overlay in overlay_recv {
+			overlays.overworld.merge(region_overlay);
+		}
 
 		let mut status = EnumMap::<_, usize>::default();
 		for ret in status_recv {
@@ -456,6 +496,6 @@ impl<'a> RegionProcessor<'a> {
 		// Sort regions in a zig-zag pattern to optimize cache usage
 		regions.sort_unstable_by_key(|&TileCoords { x, z }| (x, if x % 2 == 0 { z } else { -z }));
 
-		Ok(regions)
+		Ok((regions, overlays))
 	}
 }

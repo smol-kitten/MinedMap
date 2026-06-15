@@ -130,9 +130,47 @@ pub enum TileKind {
 	Lightmap,
 }
 
+/// Edition of the input Minecraft save data
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum Edition {
+	/// Auto-detect the edition from the input directory layout
+	#[default]
+	Auto,
+	/// Java Edition (Anvil region files)
+	Java,
+	/// Bedrock Edition (LevelDB database)
+	Bedrock,
+}
+
+impl Edition {
+	/// Resolves [Edition::Auto] to a concrete edition based on the input directory
+	///
+	/// Bedrock Edition is detected by the presence of a `db/CURRENT` file;
+	/// anything else is treated as Java Edition.
+	pub fn resolve(self, input_dir: &Path) -> Edition {
+		match self {
+			Edition::Auto => {
+				let bedrock_marker: PathBuf = [input_dir, Path::new("db/CURRENT")].iter().collect();
+				if bedrock_marker.exists() {
+					Edition::Bedrock
+				} else {
+					Edition::Java
+				}
+			}
+			other => other,
+		}
+	}
+}
+
 /// Common configuration based on command line arguments
 #[derive(Debug)]
 pub struct Config {
+	/// Resolved edition of the input save data
+	pub edition: Edition,
+	/// Path of the input Minecraft save directory
+	pub input_dir: PathBuf,
+	/// Directory to emit overlay data to, if requested
+	pub emit_overlays: Option<PathBuf>,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -189,7 +227,12 @@ impl Config {
 		let sign_transforms =
 			Self::sign_transforms(args).context("Failed to parse sign transforms")?;
 
+		let edition = args.edition.resolve(&args.input_dir);
+
 		Ok(Config {
+			edition,
+			input_dir: args.input_dir.clone(),
+			emit_overlays: args.emit_overlays.clone(),
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,

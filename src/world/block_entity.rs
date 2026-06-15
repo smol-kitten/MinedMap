@@ -90,12 +90,25 @@ impl BlockEntity {
 		let wall_sign = block_type
 			.map(|block_type| block_type.block_color.is(BlockFlag::WallSign))
 			.unwrap_or_default();
-		let (kind, sign) = match (&entity.data, wall_sign) {
-			(de::BlockEntityData::Sign(sign), false) => (SignKind::Sign, sign),
-			(de::BlockEntityData::Sign(sign), true) => (SignKind::WallSign, sign),
-			(de::BlockEntityData::HangingSign(sign), false) => (SignKind::HangingSign, sign),
-			(de::BlockEntityData::HangingSign(sign), true) => (SignKind::HangingWallSign, sign),
-			(de::BlockEntityData::Other, _) => return None,
+		// The block entity data is matched by shape, so gate sign handling on
+		// the `id` to preserve the previous (id-based) behavior exactly.
+		let hanging = entity.id == "minecraft:hanging_sign";
+		let is_sign = hanging
+			|| matches!(
+				entity.id.as_str(),
+				"minecraft:sign" | "minecraft:standing_sign"
+			);
+		let (kind, sign) = match (&entity.data, is_sign) {
+			(de::BlockEntityData::Sign(sign), true) => {
+				let kind = match (hanging, wall_sign) {
+					(false, false) => SignKind::Sign,
+					(false, true) => SignKind::WallSign,
+					(true, false) => SignKind::HangingSign,
+					(true, true) => SignKind::HangingWallSign,
+				};
+				(kind, sign)
+			}
+			_ => return None,
 		};
 		let material = block_type
 			.as_ref()
