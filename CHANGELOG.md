@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added `--mob-spawn` option
+
+  Generates a mob-spawn (spawn-proofing) map layer highlighting surface blocks
+  where hostile mobs can spawn at night, selectable in the viewer (Java
+  Edition). The viewer also gained a "Spawn chunks" overlay outlining the area
+  kept loaded around the world spawn.
+
 - Added `--structures` option
 
   Collects the bounding boxes of generated structures (villages, fortresses,

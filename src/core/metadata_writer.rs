@@ -56,6 +56,8 @@ struct Features {
 	biome: bool,
 	/// Cave/underground layer
 	cave: bool,
+	/// Mob-spawn (spawn-proofing) layer
+	mobspawn: bool,
 	/// Point-of-interest marker layers
 	pois: bool,
 	/// Generated structure bounding box layer
@@ -257,6 +259,7 @@ impl<'a> MetadataWriter<'a> {
 			height: self.config.height_layer,
 			biome: self.config.biome_layer,
 			cave: self.config.cave_layer,
+			mobspawn: self.config.mob_spawn && self.config.edition != Edition::Bedrock,
 			pois: self.config.poi_markers,
 			structures: self.config.structures,
 			overlays: self.config.overlay_layers,

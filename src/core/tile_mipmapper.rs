@@ -178,6 +178,9 @@ impl TileCollector for TileMipmapper<'_> {
 		if self.config.cave_layer {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Cavemap, level))?;
 		}
+		if self.config.mob_spawn {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Mobspawn, level))?;
+		}
 		if self.config.block_textures.is_some() {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Textured, level))?;
 		}
@@ -240,6 +243,14 @@ impl TileCollector for TileMipmapper<'_> {
 				processed: 0,
 			}
 		};
+		let mob_spawn_stat = if self.config.mob_spawn {
+			self.render_mipmap::<image::Rgba<u8>>(TileKind::Mobspawn, level, coords, prev)?
+		} else {
+			MipmapStat {
+				total: 0,
+				processed: 0,
+			}
+		};
 		let textured_stat = if self.config.block_textures.is_some() {
 			self.render_mipmap::<image::Rgba<u8>>(TileKind::Textured, level, coords, prev)?
 		} else {
@@ -248,7 +259,13 @@ impl TileCollector for TileMipmapper<'_> {
 				processed: 0,
 			}
 		};
-		Ok(map_stat + lightmap_stat + height_stat + biome_stat + cave_stat + textured_stat)
+		Ok(map_stat
+			+ lightmap_stat
+			+ height_stat
+			+ biome_stat
+			+ cave_stat
+			+ mob_spawn_stat
+			+ textured_stat)
 	}
 }
 

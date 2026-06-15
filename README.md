@@ -199,6 +199,16 @@ floor of the topmost cave found below the surface (the first air gap under solid
 ground), so cave systems near the surface become visible. Works for both Java
 and Bedrock Edition.
 
+### Mob spawning
+
+Passing `--mob-spawn` generates a `mobspawn` map layer (Java Edition) that
+highlights surface blocks where hostile mobs can spawn at night — a solid,
+opaque surface with a block-light level of 0 — selectable in the viewer as
+"Mob spawning". This is useful for spawn-proofing bases and farms.
+
+The viewer also always offers a "Spawn chunks" overlay outlining the area kept
+loaded around the world spawn.
+
 ### Structure bounding boxes
 
 Passing `--structures` reads the generated-structure data from each chunk (Java
