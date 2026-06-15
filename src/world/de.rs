@@ -157,7 +157,7 @@ pub enum BlockEntitySign {
 #[serde(untagged)]
 pub enum BlockEntityData {
 	/// A sign block entity (standing, wall or hanging)
-	Sign(BlockEntitySign),
+	Sign(Box<BlockEntitySign>),
 	/// Other block entity types not handled by MinedMap
 	Other {},
 }

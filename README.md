@@ -108,6 +108,50 @@ of single quotes (`'`), and all backslashes in the arguments must be escaped
 by doubling them. This can make regular expressions somewhat difficult to
 write and to read.
 
+### Bedrock Edition
+
+In addition to Java Edition worlds, MinedMap can render Bedrock Edition worlds,
+which store their chunk data in a LevelDB database (`<world>/db`) instead of
+Anvil region files.
+
+The edition is selected with the `--edition` option, which accepts `java`,
+`bedrock` or `auto` (the default). In `auto` mode, MinedMap detects Bedrock
+Edition by the presence of a `db/CURRENT` file in the input directory and
+otherwise treats the input as Java Edition, so usually no extra option is
+required:
+
+```shell
+minedmap /path/to/bedrock/world <viewer>/data
+```
+
+Bedrock rendering covers the overworld surface and reuses the Java Edition color
+tables by translating block identifiers; the nether and end dimensions are
+processed for overlay data (see below). A few notes:
+
+* To avoid modifying the save, the LevelDB database is copied to a temporary
+  directory before it is opened.
+* Biome-tinted blocks (grass, foliage, water) are colored using plains biome
+  values, and blocks that cannot be mapped to a known Java block are drawn in a
+  neutral gray.
+
+### Overlay data
+
+Passing `--emit-overlays <dir>` makes MinedMap write per-chunk overlay data
+while it walks the chunks during the normal render pass, so that no separate
+pass over the save data is needed. This option works for both Java and Bedrock
+Edition and does not change the generated map tiles. Two JSON files are written
+into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
+
+* `inhabited_heatmap.json` lists `[chunkX, chunkZ, inhabitedTimeTicks]` for every
+  chunk with a non-zero `InhabitedTime`. Bedrock Edition has no equivalent of
+  `InhabitedTime`, so its heatmap entries are always empty.
+* `block_features.json` lists the chunks containing notable blocks — `rail`,
+  `farmland`, `nether_portal` and `end_portal` — as `[chunkX, chunkZ]`, plus a
+  `built` list of `[chunkX, chunkZ, score]` where the score is the number of
+  player-placed block entities (chests, furnaces, hoppers, …) in the chunk.
+
+All coordinates are chunk coordinates (block coordinate `>> 4`).
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive

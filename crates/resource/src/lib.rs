@@ -10,7 +10,7 @@ mod legacy_block_types;
 
 use std::collections::HashMap;
 
-use enumflags2::{BitFlags, bitflags};
+use enumflags2::{BitFlags, bitflags, make_bitflags};
 use serde::{Deserialize, Serialize};
 
 /// Flags describing special properties of [BlockType]s
@@ -54,6 +54,15 @@ pub struct BlockColor {
 }
 
 impl BlockColor {
+	/// Neutral fallback color for unknown block types
+	///
+	/// Rendered as an opaque medium gray so that unrecognized blocks (for
+	/// example unmapped Bedrock Edition blocks) still show up on the map.
+	pub const NEUTRAL: BlockColor = BlockColor {
+		flags: make_bitflags!(BlockFlag::{Opaque}),
+		color: Color([128, 128, 128]),
+	};
+
 	/// Checks whether a block color has a given [BlockFlag] set
 	#[inline]
 	pub fn is(&self, flag: BlockFlag) -> bool {

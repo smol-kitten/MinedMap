@@ -136,7 +136,7 @@ fn generate(args: &Args, rt: &Runtime) -> Result<()> {
 
 	match config.edition {
 		// Config::new resolves Auto to a concrete edition.
-		Edition::Bedrock => bedrock::generate(&config),
+		Edition::Bedrock => bedrock::generate(&config, rt),
 		Edition::Java | Edition::Auto => generate_java(&config, rt),
 	}
 }

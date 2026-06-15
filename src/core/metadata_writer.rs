@@ -134,6 +134,23 @@ impl<'a> MetadataWriter<'a> {
 		res.context("Failed to read level.dat")
 	}
 
+	/// Determines the viewer spawn point for the configured edition
+	fn read_spawn(&self) -> Spawn {
+		if self.config.edition == Edition::Bedrock {
+			return super::bedrock::read_spawn(&self.config.input_dir)
+				.map(|(x, z)| Spawn { x, z })
+				.unwrap_or(Spawn { x: 0, z: 0 });
+		}
+
+		match self.read_level_dat() {
+			Ok(level_dat) => Self::spawn(&level_dat),
+			Err(err) => {
+				tracing::warn!("Failed to read level.dat: {err:?}");
+				Spawn { x: 0, z: 0 }
+			}
+		}
+	}
+
 	/// Generates [Spawn] data from a [de::LevelDat]
 	fn spawn(level_dat: &de::LevelDat) -> Spawn {
 		let (x, z) = match &level_dat.data {
@@ -189,6 +206,11 @@ impl<'a> MetadataWriter<'a> {
 
 	/// Generates [Entities] data from collected entity lists
 	fn entities(&self) -> Result<Entities> {
+		// The Bedrock path does not collect sign entities.
+		if self.config.edition == Edition::Bedrock {
+			return Ok(Entities::default());
+		}
+
 		let data: ProcessedEntities =
 			storage::read_file(&self.config.entities_path_final, storage::Format::Json)
 				.context("Failed to read entity data file")?;
@@ -214,15 +236,13 @@ impl<'a> MetadataWriter<'a> {
 
 	/// Runs the viewer metadata file generation
 	pub fn run(self) -> Result<()> {
-		let level_dat = self.read_level_dat()?;
-
 		let features = Features {
-			signs: !self.config.sign_patterns.is_empty(),
+			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
 		};
 
 		let mut metadata = Metadata {
 			mipmaps: Vec::new(),
-			spawn: Self::spawn(&level_dat),
+			spawn: self.read_spawn(),
 			features,
 			tile_extension: self.config.tile_extension(),
 		};

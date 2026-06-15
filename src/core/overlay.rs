@@ -35,15 +35,6 @@ pub enum Dimension {
 impl Dimension {
 	/// All dimensions in output order
 	pub const ALL: [Dimension; 3] = [Dimension::Overworld, Dimension::Nether, Dimension::End];
-
-	/// Returns the JSON key used for the dimension
-	pub fn key(self) -> &'static str {
-		match self {
-			Dimension::Overworld => "overworld",
-			Dimension::Nether => "nether",
-			Dimension::End => "end",
-		}
-	}
 }
 
 /// Block entity IDs counted towards the "built" score
@@ -203,13 +194,6 @@ impl OverlayData {
 			Dimension::Nether => &mut self.nether,
 			Dimension::End => &mut self.end,
 		}
-	}
-
-	/// Merges another [OverlayData] into this one
-	pub fn merge(&mut self, other: OverlayData) {
-		self.overworld.merge(other.overworld);
-		self.nether.merge(other.nether);
-		self.end.merge(other.end);
 	}
 
 	/// Sorts all dimensions for deterministic output
