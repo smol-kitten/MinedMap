@@ -146,20 +146,20 @@ pub enum BlockEntitySign {
 }
 
 /// Data for different kinds of block entities
+///
+/// This enum is matched by *shape* (untagged) rather than by the `id` tag, so
+/// that the raw `id` string remains available on [BlockEntity] (it is needed
+/// both to distinguish standing from hanging signs and to detect player-placed
+/// block entities for overlay data). Matching is gated on the `id` by the
+/// consumers, so a non-sign block entity that happens to match the sign shape
+/// is still ignored.
 #[derive(Debug, Deserialize)]
-#[serde(tag = "id")]
+#[serde(untagged)]
 pub enum BlockEntityData {
-	/// Regular sign
-	///
-	/// This includes standing signs and signs attached to the side of blocks
-	#[serde(rename = "minecraft:sign", alias = "minecraft:standing_sign")]
-	Sign(BlockEntitySign),
-	/// Hanging sign
-	#[serde(rename = "minecraft:hanging_sign")]
-	HangingSign(BlockEntitySign),
+	/// A sign block entity (standing, wall or hanging)
+	Sign(Box<BlockEntitySign>),
 	/// Other block entity types not handled by MinedMap
-	#[serde(other)]
-	Other,
+	Other {},
 }
 
 /// A block entity
@@ -167,6 +167,8 @@ pub enum BlockEntityData {
 /// Block entities were called tile entities pre-1.18
 #[derive(Debug, Deserialize)]
 pub struct BlockEntity {
+	/// Block entity type ID (for example `minecraft:chest`)
+	pub id: String,
 	/// Entity global X coordinate
 	pub x: i32,
 	/// Entity global Y coordinate
@@ -191,6 +193,9 @@ pub struct LevelV0 {
 	/// List of block entities
 	#[serde(default)]
 	pub tile_entities: Vec<BlockEntity>,
+	/// Cumulative number of ticks players have been in this chunk
+	#[serde(default)]
+	pub inhabited_time: Option<i64>,
 }
 
 /// Version-specific part of a [Chunk] compound
@@ -219,6 +224,12 @@ pub enum ChunkVariant {
 pub struct Chunk {
 	/// The data version of the chunk
 	pub data_version: Option<u32>,
+	/// Cumulative number of ticks players have been in this chunk
+	///
+	/// Stored at the chunk root in Minecraft 1.18+; for older chunks the value
+	/// is found in the [`Level`](LevelV0) compound instead.
+	#[serde(default)]
+	pub inhabited_time: Option<i64>,
 	/// Version-specific chunk data
 	#[serde(flatten)]
 	pub chunk: ChunkVariant,

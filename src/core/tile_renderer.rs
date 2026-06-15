@@ -13,7 +13,7 @@ use rayon::prelude::*;
 use tokio::sync::OnceCell;
 use tracing::{debug, info};
 
-use super::{common::*, region_group::RegionGroup};
+use super::{common::*, heightmap, region_group::RegionGroup};
 use crate::{
 	io::{fs, storage},
 	resource::{Colorf, block_color, needs_biome},
@@ -234,6 +234,58 @@ impl<'a> TileRenderer<'a> {
 		}
 	}
 
+	/// Renders the topographic height layer for a region tile image
+	///
+	/// Heights are first collected into a full-region grid so that hillshading
+	/// can use the gradient between neighboring blocks (including across chunk
+	/// boundaries within the region).
+	fn render_region_height(image: &mut image::RgbaImage, region: &ProcessedRegion) {
+		/// Width/height of a region tile in blocks
+		const N: usize = BLOCKS_PER_CHUNK * CHUNKS_PER_REGION;
+
+		let mut heights = vec![None; N * N];
+		for (coords, chunk) in region.chunks.iter() {
+			let Some(chunk) = chunk else {
+				continue;
+			};
+			let base_x = coords.x.0 as usize * BLOCKS_PER_CHUNK;
+			let base_z = coords.z.0 as usize * BLOCKS_PER_CHUNK;
+			for z in 0..BLOCKS_PER_CHUNK {
+				for x in 0..BLOCKS_PER_CHUNK {
+					let block_coords = LayerBlockCoords {
+						x: BlockX::new(x as u32),
+						z: BlockZ::new(z as u32),
+					};
+					if let Some(height) = chunk.depths[block_coords] {
+						heights[(base_z + z) * N + base_x + x] = Some(height.0);
+					}
+				}
+			}
+		}
+
+		for pz in 0..N {
+			for px in 0..N {
+				let Some(height) = heights[pz * N + px] else {
+					continue;
+				};
+
+				// Sample a neighbor, falling back to the center height at edges
+				// or over missing data so flat shading is used there.
+				let sample = |dx: isize, dz: isize| -> i32 {
+					let x = (px as isize + dx).clamp(0, N as isize - 1) as usize;
+					let z = (pz as isize + dz).clamp(0, N as isize - 1) as usize;
+					heights[z * N + x].unwrap_or(height)
+				};
+
+				let dzdx = (sample(1, 0) - sample(-1, 0)) as f32 * 0.5;
+				let dzdz = (sample(0, 1) - sample(0, -1)) as f32 * 0.5;
+				let shade = heightmap::hillshade(dzdx, dzdz);
+				let [r, g, b] = heightmap::shade_color(heightmap::height_color(height), shade);
+				image.put_pixel(px as u32, pz as u32, image::Rgba([r, g, b, 255]));
+			}
+		}
+	}
+
 	/// Returns the filename of the processed data for a region and the time of its last modification
 	fn processed_source(&self, coords: TileCoords) -> Result<(PathBuf, SystemTime)> {
 		let path = self.config.processed_path(coords);
@@ -273,8 +325,14 @@ impl<'a> TileRenderer<'a> {
 
 		let output_path = self.config.tile_path(TileKind::Map, 0, coords);
 		let output_timestamp = fs::read_timestamp(&output_path, MAP_FILE_META_VERSION);
+		let map_needed = Some(processed_timestamp) > output_timestamp;
 
-		if Some(processed_timestamp) <= output_timestamp {
+		let height_output_path = self.config.tile_path(TileKind::Heightmap, 0, coords);
+		let height_needed = self.config.height_layer
+			&& Some(processed_timestamp)
+				> fs::read_timestamp(&height_output_path, HEIGHTMAP_FILE_META_VERSION);
+
+		if !map_needed && !height_needed {
 			debug!(
 				"Skipping unchanged tile {}",
 				output_path
@@ -297,19 +355,38 @@ impl<'a> TileRenderer<'a> {
 			.rt
 			.block_on(self.load_region_group(processed_paths))
 			.with_context(|| format!("Region {coords:?} from previous step must be loadable"))?;
-		let mut image = image::RgbaImage::new(N, N);
-		Self::render_region(&mut image, &region_group);
 
-		fs::create_with_timestamp(
-			&output_path,
-			MAP_FILE_META_VERSION,
-			processed_timestamp,
-			|file| {
-				image
-					.write_to(file, self.config.tile_image_format())
-					.context("Failed to save image")
-			},
-		)?;
+		if map_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region(&mut image, &region_group);
+
+			fs::create_with_timestamp(
+				&output_path,
+				MAP_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
+
+		if height_needed {
+			let mut image = image::RgbaImage::new(N, N);
+			Self::render_region_height(&mut image, region_group.center());
+
+			fs::create_with_timestamp(
+				&height_output_path,
+				HEIGHTMAP_FILE_META_VERSION,
+				processed_timestamp,
+				|file| {
+					image
+						.write_to(file, self.config.tile_image_format())
+						.context("Failed to save image")
+				},
+			)?;
+		}
 
 		Ok(true)
 	}
@@ -317,6 +394,9 @@ impl<'a> TileRenderer<'a> {
 	/// Runs the tile generation
 	pub fn run(self) -> Result<()> {
 		fs::create_dir_all(&self.config.tile_dir(TileKind::Map, 0))?;
+		if self.config.height_layer {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Heightmap, 0))?;
+		}
 
 		info!("Rendering map tiles...");
 

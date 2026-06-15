@@ -33,6 +33,18 @@ pub const REGION_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(13);
 /// (because of code changes in tile generation)
 pub const MAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap heightmap tile data version number
+///
+/// Increase when the generation of heightmap tiles from processed regions
+/// changes (because of code changes in heightmap tile generation)
+pub const HEIGHTMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
+/// MinedMap textured tile data version number
+///
+/// Increase when the generation of textured tiles changes (because of code
+/// changes in textured tile generation)
+pub const TEXTURED_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap lightmap data version number
 ///
 /// Increase when the generation of lightmap tiles from region data changes
@@ -128,11 +140,61 @@ pub enum TileKind {
 	Map,
 	/// Lightmap tile for illumination layer
 	Lightmap,
+	/// Heightmap tile for the topographic layer
+	Heightmap,
+	/// High-resolution textured map tile
+	Textured,
+}
+
+/// Edition of the input Minecraft save data
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
+pub enum Edition {
+	/// Auto-detect the edition from the input directory layout
+	#[default]
+	Auto,
+	/// Java Edition (Anvil region files)
+	Java,
+	/// Bedrock Edition (LevelDB database)
+	Bedrock,
+}
+
+impl Edition {
+	/// Resolves [Edition::Auto] to a concrete edition based on the input directory
+	///
+	/// Bedrock Edition is detected by the presence of a `db/CURRENT` file;
+	/// anything else is treated as Java Edition.
+	pub fn resolve(self, input_dir: &Path) -> Edition {
+		match self {
+			Edition::Auto => {
+				let bedrock_marker: PathBuf = [input_dir, Path::new("db/CURRENT")].iter().collect();
+				if bedrock_marker.exists() {
+					Edition::Bedrock
+				} else {
+					Edition::Java
+				}
+			}
+			other => other,
+		}
+	}
 }
 
 /// Common configuration based on command line arguments
 #[derive(Debug)]
 pub struct Config {
+	/// Resolved edition of the input save data
+	pub edition: Edition,
+	/// Path of the input Minecraft save directory
+	pub input_dir: PathBuf,
+	/// Directory to emit overlay data to, if requested
+	pub emit_overlays: Option<PathBuf>,
+	/// Whether to generate viewer overlay layers from the overlay data
+	pub overlay_layers: bool,
+	/// Whether to generate the topographic height layer
+	pub height_layer: bool,
+	/// Resource pack directory for the textured layer, if requested
+	pub block_textures: Option<PathBuf>,
+	/// Per-block texture size (in pixels) for the textured layer
+	pub texture_scale: u32,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -189,7 +251,16 @@ impl Config {
 		let sign_transforms =
 			Self::sign_transforms(args).context("Failed to parse sign transforms")?;
 
+		let edition = args.edition.resolve(&args.input_dir);
+
 		Ok(Config {
+			edition,
+			input_dir: args.input_dir.clone(),
+			emit_overlays: args.emit_overlays.clone(),
+			overlay_layers: args.overlay_layers,
+			height_layer: args.height_layer,
+			block_textures: args.block_textures.clone(),
+			texture_scale: args.texture_scale,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -270,9 +341,33 @@ impl Config {
 		let prefix = match kind {
 			TileKind::Map => "map",
 			TileKind::Lightmap => "light",
+			TileKind::Heightmap => "height",
+			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");
 		[&self.output_dir, Path::new(&dir)].iter().collect()
+	}
+
+	/// Returns whether per-chunk overlay data should be collected
+	pub fn wants_overlays(&self) -> bool {
+		self.emit_overlays.is_some() || self.overlay_layers
+	}
+
+	/// Returns the directory viewer overlay layers are written to
+	pub fn overlay_layers_dir(&self) -> PathBuf {
+		[&self.output_dir, Path::new("overlays")].iter().collect()
+	}
+
+	/// Returns the directories the overlay data files should be written to
+	pub fn overlay_output_dirs(&self) -> Vec<PathBuf> {
+		let mut dirs = Vec::new();
+		if let Some(dir) = &self.emit_overlays {
+			dirs.push(dir.clone());
+		}
+		if self.overlay_layers {
+			dirs.push(self.overlay_layers_dir());
+		}
+		dirs
 	}
 
 	/// Returns the file extension for the configured image format

@@ -2,6 +2,37 @@
 
 ## [Unreleased] - ReleaseDate
 
+### Added
+
+- Added Bedrock Edition (LevelDB) support
+
+  Worlds stored in Mojang's LevelDB format can now be rendered. The edition is
+  selected with the new `--edition java|bedrock|auto` option (default `auto`,
+  which detects Bedrock by the presence of a `db/CURRENT` file).
+
+- Added `--emit-overlays <dir>` option
+
+  Emits per-chunk overlay data (`inhabited_heatmap.json` and
+  `block_features.json`) during the regular render pass for both editions,
+  without affecting the generated map tiles.
+
+- Added `--block-textures <dir>` option
+
+  Generates a high-resolution textured map layer by sampling top-face block
+  textures from a user-provided resource pack, selectable in the viewer. The
+  per-block resolution can be set with `--texture-scale`.
+
+- Added `--overlay-layers` option
+
+  Writes the per-chunk overlay data into the viewer output and exposes it as
+  toggleable viewer layers (inhabited-time heatmap, built-up areas, rails,
+  farmland and portals).
+
+- Added `--height-layer` option
+
+  Generates an additional topographic ("Topography") map layer that shades the
+  map by terrain elevation, selectable in the viewer.
+
 ## [2.8.0] - 2026-05-29
 
 ### Added

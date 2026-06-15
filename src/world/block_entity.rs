@@ -90,12 +90,25 @@ impl BlockEntity {
 		let wall_sign = block_type
 			.map(|block_type| block_type.block_color.is(BlockFlag::WallSign))
 			.unwrap_or_default();
-		let (kind, sign) = match (&entity.data, wall_sign) {
-			(de::BlockEntityData::Sign(sign), false) => (SignKind::Sign, sign),
-			(de::BlockEntityData::Sign(sign), true) => (SignKind::WallSign, sign),
-			(de::BlockEntityData::HangingSign(sign), false) => (SignKind::HangingSign, sign),
-			(de::BlockEntityData::HangingSign(sign), true) => (SignKind::HangingWallSign, sign),
-			(de::BlockEntityData::Other, _) => return None,
+		// The block entity data is matched by shape, so gate sign handling on
+		// the `id` to preserve the previous (id-based) behavior exactly.
+		let hanging = entity.id == "minecraft:hanging_sign";
+		let is_sign = hanging
+			|| matches!(
+				entity.id.as_str(),
+				"minecraft:sign" | "minecraft:standing_sign"
+			);
+		let (kind, sign) = match (&entity.data, is_sign) {
+			(de::BlockEntityData::Sign(sign), true) => {
+				let kind = match (hanging, wall_sign) {
+					(false, false) => SignKind::Sign,
+					(false, true) => SignKind::WallSign,
+					(true, false) => SignKind::HangingSign,
+					(true, true) => SignKind::HangingWallSign,
+				};
+				(kind, sign)
+			}
+			_ => return None,
 		};
 		let material = block_type
 			.as_ref()
@@ -108,5 +121,61 @@ impl BlockEntity {
 			z: entity.z,
 			data,
 		})
+	}
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	/// Deserializes a block entity from an NBT representation
+	fn decode_block_entity(value: &fastnbt::Value) -> de::BlockEntity {
+		let bytes = fastnbt::to_bytes(value).unwrap();
+		fastnbt::from_bytes(&bytes).unwrap()
+	}
+
+	#[test]
+	fn test_sign_block_entity() {
+		// A 1.20+ sign block entity must still be recognized as a sign after
+		// the switch to shape-based (untagged) block entity matching.
+		let value = fastnbt::nbt!({
+			"id": "minecraft:sign",
+			"x": 1,
+			"y": 2,
+			"z": 3,
+			"front_text": {
+				"messages": ["\"hello\"", "\"\"", "\"\"", "\"\""],
+			},
+			"back_text": {
+				"messages": ["\"\"", "\"\"", "\"\"", "\"\""],
+			},
+		});
+		let entity = decode_block_entity(&value);
+		assert_eq!(entity.id, "minecraft:sign");
+		assert!(matches!(entity.data, de::BlockEntityData::Sign(_)));
+
+		let processed = BlockEntity::new(&entity, None, 0).expect("sign should be processed");
+		assert!(matches!(
+			processed.data,
+			BlockEntityData::Sign(Sign {
+				kind: SignKind::Sign,
+				..
+			})
+		));
+	}
+
+	#[test]
+	fn test_non_sign_block_entity() {
+		// A chest must parse as "other" and not be turned into a sign.
+		let value = fastnbt::nbt!({
+			"id": "minecraft:chest",
+			"x": 0,
+			"y": 0,
+			"z": 0,
+		});
+		let entity = decode_block_entity(&value);
+		assert_eq!(entity.id, "minecraft:chest");
+		assert!(matches!(entity.data, de::BlockEntityData::Other {}));
+		assert!(BlockEntity::new(&entity, None, 0).is_none());
 	}
 }

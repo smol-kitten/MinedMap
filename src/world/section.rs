@@ -45,6 +45,15 @@ fn palette_bits(len: usize, min: u8, max: u8) -> Option<u8> {
 pub trait Section: Debug {
 	/// Returns the [BlockType] at a coordinate tuple inside the section
 	fn block_at(&self, coords: SectionBlockCoords) -> Result<Option<&BlockType>>;
+
+	/// Returns the block identifier at a coordinate tuple, if available
+	///
+	/// Used to look up textures for the textured map layer. Returns [None] for
+	/// section formats that do not carry namespaced block identifiers (the
+	/// pre-1.13 numeric format).
+	fn block_name_at(&self, _coords: SectionBlockCoords) -> Option<&str> {
+		None
+	}
 }
 
 /// Minecraft v1.13+ section block data
@@ -54,6 +63,8 @@ pub struct SectionV1_13<'a> {
 	block_states: Option<&'a [i64]>,
 	/// List of block types indexed by entries encoded in *block_states*
 	palette: Vec<Option<&'a BlockType>>,
+	/// List of block identifiers indexed by entries encoded in *block_states*
+	palette_names: Vec<&'a str>,
 	/// Number of bits per block in *block_states*
 	bits: u8,
 	/// Set to true if packed block entries in *block_states* are aligned to i64
@@ -104,10 +115,13 @@ impl<'a> SectionV1_13<'a> {
 			})
 			.collect();
 
+		let palette_names = palette.iter().map(|entry| entry.name.as_str()).collect();
+
 		Ok((
 			Self {
 				block_states,
 				palette: palette_types,
+				palette_names,
 				bits,
 				aligned_blocks,
 			},
@@ -152,6 +166,11 @@ impl Section for SectionV1_13<'_> {
 			.palette
 			.get(index)
 			.context("Palette index out of bounds")?)
+	}
+
+	fn block_name_at(&self, coords: SectionBlockCoords) -> Option<&str> {
+		let index = self.palette_index_at(coords);
+		self.palette_names.get(index).copied()
 	}
 }
 

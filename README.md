@@ -108,6 +108,80 @@ of single quotes (`'`), and all backslashes in the arguments must be escaped
 by doubling them. This can make regular expressions somewhat difficult to
 write and to read.
 
+### Bedrock Edition
+
+In addition to Java Edition worlds, MinedMap can render Bedrock Edition worlds,
+which store their chunk data in a LevelDB database (`<world>/db`) instead of
+Anvil region files.
+
+The edition is selected with the `--edition` option, which accepts `java`,
+`bedrock` or `auto` (the default). In `auto` mode, MinedMap detects Bedrock
+Edition by the presence of a `db/CURRENT` file in the input directory and
+otherwise treats the input as Java Edition, so usually no extra option is
+required:
+
+```shell
+minedmap /path/to/bedrock/world <viewer>/data
+```
+
+Bedrock rendering covers the overworld surface and reuses the Java Edition color
+tables by translating block identifiers; the nether and end dimensions are
+processed for overlay data (see below). A few notes:
+
+* To avoid modifying the save, the LevelDB database is copied to a temporary
+  directory before it is opened.
+* Biome-tinted blocks (grass, foliage, water) are colored using plains biome
+  values, and blocks that cannot be mapped to a known Java block are drawn in a
+  neutral gray.
+
+### Overlay data
+
+Passing `--emit-overlays <dir>` makes MinedMap write per-chunk overlay data
+while it walks the chunks during the normal render pass, so that no separate
+pass over the save data is needed. This option works for both Java and Bedrock
+Edition and does not change the generated map tiles. Two JSON files are written
+into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
+
+* `inhabited_heatmap.json` lists `[chunkX, chunkZ, inhabitedTimeTicks]` for every
+  chunk with a non-zero `InhabitedTime`. Bedrock Edition has no equivalent of
+  `InhabitedTime`, so its heatmap entries are always empty.
+* `block_features.json` lists the chunks containing notable blocks — `rail`,
+  `farmland`, `nether_portal` and `end_portal` — as `[chunkX, chunkZ]`, plus a
+  `built` list of `[chunkX, chunkZ, score]` where the score is the number of
+  player-placed block entities (chests, furnaces, hoppers, …) in the chunk.
+
+All coordinates are chunk coordinates (block coordinate `>> 4`).
+
+Passing `--overlay-layers` additionally writes this data into the viewer's
+output directory and exposes it as toggleable viewer layers: an inhabited-time
+heatmap, built-up areas, and rail / farmland / portal chunk markers.
+
+### Topographic layer
+
+Passing `--height-layer` generates an additional `height` tile layer that shades
+the map by terrain elevation using a hypsometric tint (blue for low areas
+through green and brown up to white peaks), with hillshaded relief for a
+three-dimensional look. The layer can be toggled in the viewer as "Topography"
+and works for both Java and Bedrock Edition. It is derived from the same height
+data already computed for the regular map, so it does not change the normal map
+tiles.
+
+### Textured layer
+
+Passing `--block-textures <dir>` generates a high-resolution `textured` map
+layer that samples the top-face block textures from a Minecraft resource pack
+instead of using a single flat color per block. The layer is selectable in the
+viewer as a "Textured" base map, and works for both Java and Bedrock Edition.
+
+No textures are bundled with MinedMap — point `--block-textures` at a resource
+pack directory you have the rights to use (the directory may contain an
+`assets/minecraft/textures/block` tree, or be a flat directory of `<block>.png`
+files). The per-block resolution defaults to 8 pixels and can be changed with
+`--texture-scale <pixels>` (1–16); higher values give more detail at the cost of
+larger tiles. Each block's texture is normalized to its flat map color, so biome
+tinting and depth shading are preserved, and blocks without a matching texture
+fall back to the flat color.
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive

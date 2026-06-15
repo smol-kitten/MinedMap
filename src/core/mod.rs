@@ -1,10 +1,14 @@
 //! Core functions of the MinedMap CLI
 
+mod bedrock;
 mod common;
 mod entity_collector;
+mod heightmap;
 mod metadata_writer;
+mod overlay;
 mod region_group;
 mod region_processor;
+mod texture;
 mod tile_collector;
 mod tile_merger;
 mod tile_mipmapper;
@@ -21,7 +25,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use git_version::git_version;
 
-use common::{Config, ImageFormat};
+use common::{Config, Edition, ImageFormat};
 use metadata_writer::MetadataWriter;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use rayon::ThreadPool;
@@ -82,6 +86,44 @@ pub struct Args {
 	/// Format of generated map tiles
 	#[arg(long, value_enum, default_value_t)]
 	pub image_format: ImageFormat,
+	/// Edition of the input Minecraft save data
+	///
+	/// In `auto` mode (the default), Bedrock Edition is detected by the
+	/// presence of a `db/CURRENT` file in the input directory; otherwise the
+	/// input is treated as Java Edition.
+	#[arg(long, value_enum, default_value_t)]
+	pub edition: Edition,
+	/// Emit per-chunk overlay data to the given directory
+	///
+	/// Writes `inhabited_heatmap.json` and `block_features.json` describing the
+	/// `InhabitedTime` and notable blocks of each chunk, collected during the
+	/// regular render pass. Does not affect the generated map tiles.
+	#[arg(long, value_name = "DIR")]
+	pub emit_overlays: Option<PathBuf>,
+	/// Generate viewer overlay layers from the per-chunk overlay data
+	///
+	/// Writes the overlay data into the output directory and exposes it in the
+	/// viewer as toggleable layers (inhabited-time heatmap, built-up areas,
+	/// rails, farmland and portals).
+	#[arg(long)]
+	pub overlay_layers: bool,
+	/// Generate an additional topographic (height) map layer
+	///
+	/// Renders a `height` tile layer that shades the map by terrain elevation,
+	/// selectable in the viewer. Does not affect the regular map tiles.
+	#[arg(long)]
+	pub height_layer: bool,
+	/// Generate a high-resolution textured map layer from a resource pack
+	///
+	/// Samples the top-face block textures from the given resource pack
+	/// directory to render a detailed `textured` layer, selectable in the
+	/// viewer. No textures are bundled with MinedMap; point this at a Minecraft
+	/// resource pack you have the rights to use.
+	#[arg(long, value_name = "DIR")]
+	pub block_textures: Option<PathBuf>,
+	/// Per-block texture size in pixels for the textured layer
+	#[arg(long, value_name = "PIXELS", default_value_t = 8, value_parser = clap::value_parser!(u32).range(1..=16))]
+	pub texture_scale: u32,
 	/// Prefix for text of signs to show on the map
 	#[arg(long)]
 	pub sign_prefix: Vec<String>,
@@ -118,11 +160,34 @@ fn setup_threads(num_threads: usize) -> Result<ThreadPool> {
 fn generate(args: &Args, rt: &Runtime) -> Result<()> {
 	let config = Config::new(args)?;
 
-	let regions = RegionProcessor::new(&config).run()?;
-	TileRenderer::new(&config, rt, &regions).run()?;
-	let tiles = TileMipmapper::new(&config, &regions).run()?;
-	EntityCollector::new(&config, &regions).run()?;
-	MetadataWriter::new(&config, &tiles).run()
+	match config.edition {
+		// Config::new resolves Auto to a concrete edition.
+		Edition::Bedrock => bedrock::generate(&config, rt),
+		Edition::Java | Edition::Auto => generate_java(&config, rt),
+	}
+}
+
+/// Runs all MinedMap generation steps for a Java Edition world
+fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
+	let (regions, overlays) = RegionProcessor::new(config).run()?;
+	TileRenderer::new(config, rt, &regions).run()?;
+	let tiles = TileMipmapper::new(config, &regions).run()?;
+	EntityCollector::new(config, &regions).run()?;
+	MetadataWriter::new(config, &tiles).run()?;
+
+	write_overlays(config, overlays)?;
+
+	Ok(())
+}
+
+/// Writes collected overlay data to all configured destinations
+fn write_overlays(config: &Config, overlays: overlay::OverlayData) -> Result<()> {
+	let dirs = config.overlay_output_dirs();
+	if dirs.is_empty() {
+		return Ok(());
+	}
+	let dir_refs: Vec<&std::path::Path> = dirs.iter().map(PathBuf::as_path).collect();
+	overlays.write(&dir_refs)
 }
 
 /// Creates a file watcher for the
