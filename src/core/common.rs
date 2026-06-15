@@ -266,6 +266,8 @@ pub struct Config {
 	pub unknown_blocks: crate::resource::UnknownBlockMode,
 	/// World seed, used for the slime-chunk overlay (Java Edition only)
 	pub world_seed: Option<i64>,
+	/// Whether to collect generated structure bounding boxes
+	pub structures: bool,
 	/// Whether to collect points of interest for viewer marker layers
 	pub poi_markers: bool,
 	/// Path of input POI directory
@@ -290,6 +292,8 @@ pub struct Config {
 	pub viewer_entities_path: PathBuf,
 	/// Path of viewer POI file
 	pub viewer_pois_path: PathBuf,
+	/// Path of viewer structures file
+	pub viewer_structures_path: PathBuf,
 	/// Format of generated map tiles
 	pub image_format: ImageFormat,
 	/// Sign text filter patterns
@@ -334,6 +338,9 @@ impl Config {
 			.iter()
 			.collect();
 		let viewer_pois_path = [&args.output_dir, Path::new("pois.json")].iter().collect();
+		let viewer_structures_path = [&args.output_dir, Path::new("structures.json")]
+			.iter()
+			.collect();
 
 		let sign_patterns = Self::sign_patterns(args).context("Failed to parse sign patterns")?;
 		let sign_transforms =
@@ -359,6 +366,7 @@ impl Config {
 			texture_scale: args.texture_scale,
 			unknown_blocks: args.unknown_blocks.into(),
 			world_seed,
+			structures: args.structures,
 			poi_markers: args.poi_markers,
 			poi_dir,
 			region_dir,
@@ -371,6 +379,7 @@ impl Config {
 			viewer_info_path,
 			viewer_entities_path,
 			viewer_pois_path,
+			viewer_structures_path,
 			image_format: args.image_format,
 			sign_patterns,
 			sign_transforms,

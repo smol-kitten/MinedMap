@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `--structures` option
+
+  Collects the bounding boxes of generated structures (villages, fortresses,
+  monuments, …) and shows them as a toggleable "Structures" viewer layer (Java
+  Edition).
+
 - Added `--poi-markers` option
 
   Collects the world's point-of-interest data (village meeting points, villager

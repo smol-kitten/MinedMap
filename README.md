@@ -199,6 +199,14 @@ floor of the topmost cave found below the surface (the first air gap under solid
 ground), so cave systems near the surface become visible. Works for both Java
 and Bedrock Edition.
 
+### Structure bounding boxes
+
+Passing `--structures` reads the generated-structure data from each chunk (Java
+Edition) and draws the bounding boxes of structures — villages, fortresses,
+monuments, mansions, mineshafts, … — as labeled rectangles in a toggleable
+"Structures" viewer layer, colored by structure type. Each box is the union of
+the structure's pieces, so it covers the full footprint.
+
 ### Points of interest
 
 Passing `--poi-markers` reads the world's point-of-interest data (Java Edition,
