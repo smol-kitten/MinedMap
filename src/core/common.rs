@@ -39,6 +39,12 @@ pub const MAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 /// changes (because of code changes in heightmap tile generation)
 pub const HEIGHTMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 
+/// MinedMap textured tile data version number
+///
+/// Increase when the generation of textured tiles changes (because of code
+/// changes in textured tile generation)
+pub const TEXTURED_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// MinedMap lightmap data version number
 ///
 /// Increase when the generation of lightmap tiles from region data changes
@@ -136,6 +142,8 @@ pub enum TileKind {
 	Lightmap,
 	/// Heightmap tile for the topographic layer
 	Heightmap,
+	/// High-resolution textured map tile
+	Textured,
 }
 
 /// Edition of the input Minecraft save data
@@ -183,6 +191,10 @@ pub struct Config {
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
 	pub height_layer: bool,
+	/// Resource pack directory for the textured layer, if requested
+	pub block_textures: Option<PathBuf>,
+	/// Per-block texture size (in pixels) for the textured layer
+	pub texture_scale: u32,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -247,6 +259,8 @@ impl Config {
 			emit_overlays: args.emit_overlays.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
+			block_textures: args.block_textures.clone(),
+			texture_scale: args.texture_scale,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -328,6 +342,7 @@ impl Config {
 			TileKind::Map => "map",
 			TileKind::Lightmap => "light",
 			TileKind::Heightmap => "height",
+			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");
 		[&self.output_dir, Path::new(&dir)].iter().collect()

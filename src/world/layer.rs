@@ -40,6 +40,13 @@ pub type BlockArray = LayerBlockArray<Option<BlockColor>>;
 /// Indices are stored incremented by 1 to allow using a [NonZeroU16].
 pub type BiomeArray = LayerBlockArray<Option<NonZeroU16>>;
 
+/// Array optionally storing a block-name index for each coordinate of a chunk
+///
+/// The entries refer to a block-name list generated with the top layer data.
+/// Indices are stored incremented by 1 to allow using a [NonZeroU16]. This data
+/// is only used in-memory to render the textured layer; it is never serialized.
+pub type NameArray = LayerBlockArray<Option<NonZeroU16>>;
+
 /// Array storing a block light value for each coordinate for a chunk
 pub type BlockLightArray = LayerBlockArray<u8>;
 
@@ -52,6 +59,8 @@ struct LayerEntry<'a> {
 	block: &'a mut Option<BlockColor>,
 	/// The biome type of the referenced entry
 	biome: &'a mut Option<NonZeroU16>,
+	/// The block-name index of the referenced entry
+	name: &'a mut Option<NonZeroU16>,
 	/// The block light of the referenced entry
 	block_light: &'a mut u8,
 	/// The depth value of the referenced entry
@@ -80,6 +89,7 @@ impl LayerEntry<'_> {
 	fn fill(
 		&mut self,
 		biome_list: &mut IndexSet<Biome>,
+		name_list: &mut IndexSet<String>,
 		section: SectionIterItem,
 		coords: SectionBlockCoords,
 	) -> Result<bool> {
@@ -105,6 +115,15 @@ impl LayerEntry<'_> {
 					.try_into()
 					.expect("biome index not in range"),
 			);
+
+			if let Some(name) = section.section.block_name_at(coords) {
+				let (name_index, _) = name_list.insert_full(name.to_string());
+				*self.name = NonZeroU16::new(
+					(name_index + 1)
+						.try_into()
+						.expect("block name index not in range"),
+				);
+			}
 		}
 
 		if block_type.block_color.is(BlockFlag::Water) {
@@ -128,6 +147,8 @@ pub struct LayerData {
 	pub blocks: Box<BlockArray>,
 	/// Biome data
 	pub biomes: Box<BiomeArray>,
+	/// Block-name index data (for the textured layer; not serialized)
+	pub names: Box<NameArray>,
 	/// Block light data
 	pub block_light: Box<BlockLightArray>,
 	/// Depth data
@@ -140,6 +161,7 @@ impl LayerData {
 		LayerEntry {
 			block: &mut self.blocks[coords],
 			biome: &mut self.biomes[coords],
+			name: &mut self.names[coords],
 			block_light: &mut self.block_light[coords],
 			depth: &mut self.depths[coords],
 		}
@@ -154,7 +176,11 @@ impl LayerData {
 /// map. For water blocks, the height of the first non-water block
 /// is additionally filled in as the water depth (the block height is
 /// used as depth otherwise).
-pub fn top_layer(biome_list: &mut IndexSet<Biome>, chunk: &Chunk) -> Result<Option<LayerData>> {
+pub fn top_layer(
+	biome_list: &mut IndexSet<Biome>,
+	name_list: &mut IndexSet<String>,
+	chunk: &Chunk,
+) -> Result<Option<LayerData>> {
 	use BLOCKS_PER_CHUNK as N;
 
 	if chunk.is_empty() {
@@ -176,7 +202,7 @@ pub fn top_layer(biome_list: &mut IndexSet<Biome>, chunk: &Chunk) -> Result<Opti
 					}
 
 					let coords = SectionBlockCoords { xz, y };
-					if !entry.fill(biome_list, section, coords)? {
+					if !entry.fill(biome_list, name_list, section, coords)? {
 						continue;
 					}
 

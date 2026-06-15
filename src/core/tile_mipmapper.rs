@@ -172,6 +172,9 @@ impl TileCollector for TileMipmapper<'_> {
 		if self.config.height_layer {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Heightmap, level))?;
 		}
+		if self.config.block_textures.is_some() {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Textured, level))?;
+		}
 
 		Ok(())
 	}
@@ -215,7 +218,15 @@ impl TileCollector for TileMipmapper<'_> {
 				processed: 0,
 			}
 		};
-		Ok(map_stat + lightmap_stat + height_stat)
+		let textured_stat = if self.config.block_textures.is_some() {
+			self.render_mipmap::<image::Rgba<u8>>(TileKind::Textured, level, coords, prev)?
+		} else {
+			MipmapStat {
+				total: 0,
+				processed: 0,
+			}
+		};
+		Ok(map_stat + lightmap_stat + height_stat + textured_stat)
 	}
 }
 

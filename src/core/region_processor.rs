@@ -16,6 +16,7 @@ use tracing::{debug, info, warn};
 
 use super::common::*;
 use super::overlay::{self, OverlayData};
+use super::texture;
 use crate::{
 	io::{fs, storage},
 	resource,
@@ -89,10 +90,14 @@ enum RegionProcessorStatus {
 struct SingleRegionData {
 	/// [IndexSet] of biomes used by the processed region
 	biome_list: IndexSet<Biome>,
+	/// [IndexSet] of block names used by the processed region (for textures)
+	name_list: IndexSet<String>,
 	/// Processed region chunk intermediate data
 	chunks: ChunkArray<Option<Box<ProcessedChunk>>>,
 	/// Lightmap intermediate data
 	lightmap: image::GrayAlphaImage,
+	/// Textured layer intermediate data, if the textured layer is enabled
+	textured: Option<image::RgbaImage>,
 	/// Processed entity intermediate data
 	entities: ProcessedEntities,
 	/// Accumulated overlay data for the region (overworld dimension)
@@ -109,8 +114,10 @@ impl Default for SingleRegionData {
 		let lightmap = image::GrayAlphaImage::new(N, N);
 		Self {
 			biome_list: Default::default(),
+			name_list: Default::default(),
 			chunks: Default::default(),
 			lightmap,
+			textured: None,
 			entities: Default::default(),
 			overlay: Default::default(),
 			has_unknown: false,
@@ -134,6 +141,8 @@ struct SingleRegionProcessor<'a> {
 	lightmap_path: PathBuf,
 	/// Processed entity output filename
 	entities_path: PathBuf,
+	/// Textured tile output filename
+	textured_path: PathBuf,
 	/// Timestamp of last modification of input file
 	input_timestamp: SystemTime,
 	/// Timestamp of last modification of processed region output file (if valid)
@@ -150,6 +159,10 @@ struct SingleRegionProcessor<'a> {
 	entities_needed: bool,
 	/// True if per-chunk overlay data should be collected
 	overlays_needed: bool,
+	/// True if the textured tile needs to be updated
+	textured_needed: bool,
+	/// Texture atlas for the textured layer, if enabled
+	texture_atlas: Option<&'a texture::TextureAtlas>,
 	/// Format of generated map tiles
 	image_format: image::ImageFormat,
 }
@@ -169,9 +182,14 @@ impl<'a> SingleRegionProcessor<'a> {
 		let entities_path = processor.config.entities_path(0, coords);
 		let entities_timestamp = fs::read_timestamp(&entities_path, ENTITIES_FILE_META_VERSION);
 
+		let textured_path = processor.config.tile_path(TileKind::Textured, 0, coords);
+		let textured_timestamp = fs::read_timestamp(&textured_path, TEXTURED_FILE_META_VERSION);
+
 		let output_needed = Some(input_timestamp) > output_timestamp;
 		let lightmap_needed = Some(input_timestamp) > lightmap_timestamp;
 		let entities_needed = Some(input_timestamp) > entities_timestamp;
+		let textured_needed =
+			processor.texture_atlas.is_some() && Some(input_timestamp) > textured_timestamp;
 
 		Ok(SingleRegionProcessor {
 			block_types: &processor.block_types,
@@ -181,6 +199,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			output_path,
 			lightmap_path,
 			entities_path,
+			textured_path,
 			input_timestamp,
 			output_timestamp,
 			lightmap_timestamp,
@@ -189,6 +208,8 @@ impl<'a> SingleRegionProcessor<'a> {
 			lightmap_needed,
 			entities_needed,
 			overlays_needed: processor.config.wants_overlays(),
+			textured_needed,
+			texture_atlas: processor.texture_atlas.as_ref(),
 			image_format: processor.config.tile_image_format(),
 		})
 	}
@@ -247,6 +268,26 @@ impl<'a> SingleRegionProcessor<'a> {
 		)
 	}
 
+	/// Saves a textured tile
+	///
+	/// The timestamp is the time of the last modification of the input region data.
+	fn save_textured(&self, textured: &image::RgbaImage) -> Result<()> {
+		if !self.textured_needed {
+			return Ok(());
+		}
+
+		fs::create_with_timestamp(
+			&self.textured_path,
+			TEXTURED_FILE_META_VERSION,
+			self.input_timestamp,
+			|file| {
+				textured
+					.write_to(file, self.image_format)
+					.context("Failed to save image")
+			},
+		)
+	}
+
 	/// Saves processed entity data
 	///
 	/// The timestamp is the time of the last modification of the input region data.
@@ -280,7 +321,11 @@ impl<'a> SingleRegionProcessor<'a> {
 			data.overlay.add(abs_x, abs_z, &info);
 		}
 
-		if !self.output_needed && !self.lightmap_needed && !self.entities_needed {
+		if !self.output_needed
+			&& !self.lightmap_needed
+			&& !self.entities_needed
+			&& !self.textured_needed
+		{
 			return Ok(());
 		}
 
@@ -289,15 +334,39 @@ impl<'a> SingleRegionProcessor<'a> {
 				.with_context(|| format!("Failed to decode chunk {chunk_coords:?}"))?;
 		data.has_unknown |= has_unknown;
 
-		if (self.output_needed || self.lightmap_needed)
+		if (self.output_needed || self.lightmap_needed || self.textured_needed)
 			&& let Some(layer::LayerData {
 				blocks,
 				biomes,
+				names,
 				block_light,
 				depths,
-			}) = world::layer::top_layer(&mut data.biome_list, &chunk)
+			}) = world::layer::top_layer(&mut data.biome_list, &mut data.name_list, &chunk)
 				.with_context(|| format!("Failed to process chunk {chunk_coords:?}"))?
 		{
+			if let (true, Some(atlas), Some(textured)) = (
+				self.textured_needed,
+				self.texture_atlas,
+				data.textured.as_mut(),
+			) {
+				let chunk_image = texture::render_chunk(
+					atlas,
+					&blocks,
+					&biomes,
+					&names,
+					&depths,
+					&data.biome_list,
+					&data.name_list,
+				);
+				let scale = atlas.scale() as i64;
+				image::imageops::overlay(
+					textured,
+					&chunk_image,
+					i64::from(chunk_coords.x.0) * BLOCKS_PER_CHUNK as i64 * scale,
+					i64::from(chunk_coords.z.0) * BLOCKS_PER_CHUNK as i64 * scale,
+				);
+			}
+
 			if self.output_needed {
 				data.chunks[chunk_coords] = Some(Box::new(ProcessedChunk {
 					blocks,
@@ -335,6 +404,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.lightmap_needed
 			&& !self.entities_needed
 			&& !self.overlays_needed
+			&& !self.textured_needed
 		{
 			debug!(
 				"Skipping unchanged region r.{}.{}.mca",
@@ -349,6 +419,10 @@ impl<'a> SingleRegionProcessor<'a> {
 		);
 
 		let mut data = SingleRegionData::default();
+		if let Some(atlas) = self.texture_atlas.filter(|_| self.textured_needed) {
+			let n = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32 * atlas.scale();
+			data.textured = Some(image::RgbaImage::new(n, n));
+		}
 
 		if let Err(err) = self.process_chunks(&mut data) {
 			if self.output_timestamp.is_some()
@@ -370,6 +444,7 @@ impl<'a> SingleRegionProcessor<'a> {
 		}
 
 		let overlay = std::mem::take(&mut data.overlay);
+		let textured = data.textured.take();
 
 		let processed_region = ProcessedRegion {
 			biome_list: data.biome_list.into_iter().collect(),
@@ -379,6 +454,9 @@ impl<'a> SingleRegionProcessor<'a> {
 		self.save_region(&processed_region)?;
 		self.save_lightmap(&data.lightmap)?;
 		self.save_entities(&mut data.entities)?;
+		if let Some(textured) = textured {
+			self.save_textured(&textured)?;
+		}
 
 		let status = if data.has_unknown {
 			RegionProcessorStatus::OkWithUnknown
@@ -398,6 +476,8 @@ pub struct RegionProcessor<'a> {
 	block_types: resource::BlockTypes,
 	/// Registry of known biome types
 	biome_types: resource::BiomeTypes,
+	/// Texture atlas for the textured layer, if enabled
+	texture_atlas: Option<texture::TextureAtlas>,
 	/// Common MinedMap configuration from command line
 	config: &'a Config,
 }
@@ -405,9 +485,14 @@ pub struct RegionProcessor<'a> {
 impl<'a> RegionProcessor<'a> {
 	/// Constructs a new RegionProcessor
 	pub fn new(config: &'a Config) -> Self {
+		let texture_atlas = config
+			.block_textures
+			.as_ref()
+			.map(|dir| texture::TextureAtlas::new(dir, config.texture_scale));
 		RegionProcessor {
 			block_types: resource::BlockTypes::default(),
 			biome_types: resource::BiomeTypes::default(),
+			texture_atlas,
 			config,
 		}
 	}
@@ -436,6 +521,9 @@ impl<'a> RegionProcessor<'a> {
 		fs::create_dir_all(&self.config.processed_dir)?;
 		fs::create_dir_all(&self.config.tile_dir(TileKind::Lightmap, 0))?;
 		fs::create_dir_all(&self.config.entities_dir(0))?;
+		if self.texture_atlas.is_some() {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Textured, 0))?;
+		}
 
 		info!("Processing region files...");
 

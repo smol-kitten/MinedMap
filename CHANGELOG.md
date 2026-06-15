@@ -16,6 +16,12 @@
   `block_features.json`) during the regular render pass for both editions,
   without affecting the generated map tiles.
 
+- Added `--block-textures <dir>` option
+
+  Generates a high-resolution textured map layer by sampling top-face block
+  textures from a user-provided resource pack, selectable in the viewer. The
+  per-block resolution can be set with `--texture-scale`.
+
 - Added `--overlay-layers` option
 
   Writes the per-chunk overlay data into the viewer output and exposes it as

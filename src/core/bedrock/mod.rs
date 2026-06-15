@@ -30,10 +30,13 @@ use rayon::prelude::*;
 use tokio::runtime::Runtime;
 use tracing::{debug, info, warn};
 
+use indexmap::IndexSet;
+
 use super::{
 	common::*,
 	metadata_writer::MetadataWriter,
 	overlay::{self, ChunkOverlayInfo, Dimension, OverlayData},
+	texture::{self, TextureAtlas},
 	tile_mipmapper::TileMipmapper,
 	tile_renderer::TileRenderer,
 };
@@ -41,7 +44,7 @@ use crate::{
 	io::{fs, storage},
 	resource::{BlockFlag, BlockTypes},
 	types::*,
-	world::layer::{self, BlockHeight},
+	world::layer::{self, BlockHeight, NameArray},
 };
 
 use db::BedrockDb;
@@ -200,6 +203,8 @@ struct ProcessedChunkResult {
 	cz: i32,
 	/// Processed top-layer chunk data, if the chunk contained any blocks
 	chunk: Option<Box<ProcessedChunk>>,
+	/// Rendered textured chunk subtile, if the textured layer is enabled
+	textured: Option<image::RgbaImage>,
 	/// Collected overlay info
 	overlay: ChunkOverlayInfo,
 }
@@ -220,6 +225,13 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	let index = build_index(&mut db)?;
 
 	fs::create_dir_all(&config.processed_dir)?;
+	let atlas = config
+		.block_textures
+		.as_ref()
+		.map(|dir| TextureAtlas::new(dir, config.texture_scale));
+	if atlas.is_some() {
+		fs::create_dir_all(&config.tile_dir(TileKind::Textured, 0))?;
+	}
 
 	info!("Processing Bedrock chunks...");
 	let mut overlays = OverlayData::default();
@@ -230,8 +242,14 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 
 		if *dim == Dimension::Overworld {
 			let coords = TileCoords { x: *rx, z: *rz };
-			let region_overlay =
-				process_overworld_region(config, &block_types, coords, &raw, input_timestamp)?;
+			let region_overlay = process_overworld_region(
+				config,
+				&block_types,
+				atlas.as_ref(),
+				coords,
+				&raw,
+				input_timestamp,
+			)?;
 			overlays.overworld.merge(region_overlay);
 			overworld_regions.push(coords);
 		} else {
@@ -345,6 +363,7 @@ fn decode_sections(raw: &RawChunk) -> BTreeMap<i32, SubChunkLayer> {
 fn process_overworld_region(
 	config: &Config,
 	block_types: &BlockTypes,
+	atlas: Option<&TextureAtlas>,
 	coords: TileCoords,
 	raw: &[RawChunk],
 	timestamp: SystemTime,
@@ -356,6 +375,11 @@ fn process_overworld_region(
 		.map(|raw_chunk| {
 			let sections = decode_sections(raw_chunk);
 			let chunk = build_processed_chunk(block_types, &sections);
+			let textured = atlas.and_then(|atlas| {
+				chunk.as_deref().map(|processed| {
+					render_textured_chunk(atlas, block_types, &sections, processed)
+				})
+			});
 			let overlay = if want_overlays {
 				chunk_overlay_info(block_types, &sections, raw_chunk.block_entities.as_deref())
 			} else {
@@ -365,6 +389,7 @@ fn process_overworld_region(
 				cx: raw_chunk.cx,
 				cz: raw_chunk.cz,
 				chunk,
+				textured,
 				overlay,
 			}
 		})
@@ -377,12 +402,25 @@ fn process_overworld_region(
 		chunks: Default::default(),
 	};
 	let mut region_overlay = overlay::DimensionOverlay::default();
+	let mut textured_tile = atlas.map(|atlas| {
+		let n = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32 * atlas.scale();
+		image::RgbaImage::new(n, n)
+	});
+	let scale = atlas.map(|atlas| atlas.scale()).unwrap_or(1) as i64;
 
 	for result in results {
 		let chunk_coords = ChunkCoords {
 			x: ChunkX::new(result.cx.rem_euclid(REGION_SIZE) as u32),
 			z: ChunkZ::new(result.cz.rem_euclid(REGION_SIZE) as u32),
 		};
+		if let (Some(tile), Some(chunk_image)) = (textured_tile.as_mut(), &result.textured) {
+			image::imageops::overlay(
+				tile,
+				chunk_image,
+				i64::from(chunk_coords.x.0) * BLOCKS_PER_CHUNK as i64 * scale,
+				i64::from(chunk_coords.z.0) * BLOCKS_PER_CHUNK as i64 * scale,
+			);
+		}
 		region.chunks[chunk_coords] = result.chunk;
 		if want_overlays {
 			region_overlay.add(result.cx, result.cz, &result.overlay);
@@ -398,7 +436,74 @@ fn process_overworld_region(
 	)
 	.with_context(|| format!("Failed to write processed region {coords:?}"))?;
 
+	if let Some(tile) = textured_tile {
+		let path = config.tile_path(TileKind::Textured, 0, coords);
+		fs::create_with_timestamp(&path, TEXTURED_FILE_META_VERSION, timestamp, |file| {
+			tile.write_to(file, config.tile_image_format())
+				.context("Failed to save textured tile")
+		})
+		.with_context(|| format!("Failed to write textured tile {coords:?}"))?;
+	}
+
 	Ok(region_overlay)
+}
+
+/// Renders a textured chunk subtile from decoded Bedrock subchunks
+fn render_textured_chunk(
+	atlas: &TextureAtlas,
+	block_types: &BlockTypes,
+	sections: &BTreeMap<i32, SubChunkLayer>,
+	processed: &ProcessedChunk,
+) -> image::RgbaImage {
+	let mut names = Box::new(NameArray::default());
+	let mut name_list: IndexSet<String> = IndexSet::new();
+
+	for x in 0..subchunk::SUBCHUNK_SIZE {
+		for z in 0..subchunk::SUBCHUNK_SIZE {
+			if let Some(name) = surface_block_name(block_types, sections, x, z) {
+				let (index, _) = name_list.insert_full(name);
+				names[LayerBlockCoords {
+					x: BlockX::new(x),
+					z: BlockZ::new(z),
+				}] = NonZeroU16::new((index + 1) as u16);
+			}
+		}
+	}
+
+	// Bedrock worlds use a single plains biome (see process_overworld_region).
+	let mut biome_list = IndexSet::new();
+	biome_list.insert(*block_types_fallback_biome());
+
+	texture::render_chunk(
+		atlas,
+		&processed.blocks,
+		&processed.biomes,
+		&names,
+		&processed.depths,
+		&biome_list,
+		&name_list,
+	)
+}
+
+/// Returns the Java-translated name of the topmost opaque block in a column
+fn surface_block_name(
+	block_types: &BlockTypes,
+	sections: &BTreeMap<i32, SubChunkLayer>,
+	x: usize,
+	z: usize,
+) -> Option<String> {
+	for (_, sec) in sections.iter().rev() {
+		for y in (0..subchunk::SUBCHUNK_SIZE).rev() {
+			let Some(name) = sec.name_at(block_offset(x, y, z)) else {
+				continue;
+			};
+			let (color, _) = blocks::block_color(name, block_types);
+			if color.is(BlockFlag::Opaque) {
+				return Some(blocks::translate_block_name(name).to_string());
+			}
+		}
+	}
+	None
 }
 
 /// Collects only overlay data for a non-overworld region
@@ -631,6 +736,8 @@ mod test {
 			emit_overlays: Some(overlay_dir.to_path_buf()),
 			overlay_layers: true,
 			height_layer: true,
+			block_textures: Some(input_dir.join("textures")),
+			texture_scale: 4,
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
 			level_dat_old_path: input_dir.join("level.dat_old"),
@@ -683,6 +790,15 @@ mod test {
 
 		std::fs::write(input_dir.join("level.dat"), level_dat(64, -32)).unwrap();
 
+		// A minimal resource pack with a solid magenta stone texture
+		let tex_dir = input_dir.join("textures/assets/minecraft/textures/block");
+		std::fs::create_dir_all(&tex_dir).unwrap();
+		let mut stone_tex = image::RgbaImage::new(16, 16);
+		for p in stone_tex.pixels_mut() {
+			*p = image::Rgba([200, 40, 160, 255]);
+		}
+		stone_tex.save(tex_dir.join("stone.png")).unwrap();
+
 		let config = test_config(&input_dir, &output_dir, &overlay_dir);
 		let rt = tokio::runtime::Builder::new_current_thread()
 			.build()
@@ -695,6 +811,18 @@ mod test {
 		// The topographic height layer must have been generated too
 		assert!(output_dir.join("height/0/r.0.0.png").is_file());
 		assert!(output_dir.join("info.json").is_file());
+
+		// The textured layer must have been generated at 4x the resolution and
+		// reflect the resource pack's stone texture color
+		let textured_path = output_dir.join("textured/0/r.0.0.png");
+		assert!(textured_path.is_file());
+		let textured = image::open(&textured_path).unwrap().to_rgba8();
+		assert_eq!(textured.width(), (16 * 32 * 4) as u32);
+		// Chunk (0, 0) sits at the top-left of the region tile; sample inside it.
+		// The stone texture is solid, so the textured pixel is opaque and colored.
+		let pixel = textured.get_pixel(8, 8);
+		assert_eq!(pixel[3], 255);
+		assert!(pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32 > 0);
 
 		// Overlay data must reflect the chunk's blocks and block entity
 		let features: serde_json::Value = serde_json::from_slice(
@@ -725,6 +853,7 @@ mod test {
 		assert_eq!(info["spawn"]["z"], -32);
 		assert_eq!(info["features"]["height"], true);
 		assert_eq!(info["features"]["overlays"], true);
+		assert_eq!(info["features"]["textured"], true);
 
 		// Overlay layer data must also be written into the viewer output dir
 		assert!(output_dir.join("overlays/block_features.json").is_file());

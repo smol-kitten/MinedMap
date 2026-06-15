@@ -54,6 +54,8 @@ struct Features {
 	height: bool,
 	/// Overlay data layers (heatmap, features)
 	overlays: bool,
+	/// High-resolution textured layer
+	textured: bool,
 }
 
 /// Viewer metadata JSON data structure
@@ -244,6 +246,7 @@ impl<'a> MetadataWriter<'a> {
 			signs: self.config.edition != Edition::Bedrock && !self.config.sign_patterns.is_empty(),
 			height: self.config.height_layer,
 			overlays: self.config.overlay_layers,
+			textured: self.config.block_textures.is_some(),
 		};
 
 		let mut metadata = Metadata {

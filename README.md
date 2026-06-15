@@ -166,6 +166,22 @@ and works for both Java and Bedrock Edition. It is derived from the same height
 data already computed for the regular map, so it does not change the normal map
 tiles.
 
+### Textured layer
+
+Passing `--block-textures <dir>` generates a high-resolution `textured` map
+layer that samples the top-face block textures from a Minecraft resource pack
+instead of using a single flat color per block. The layer is selectable in the
+viewer as a "Textured" base map, and works for both Java and Bedrock Edition.
+
+No textures are bundled with MinedMap — point `--block-textures` at a resource
+pack directory you have the rights to use (the directory may contain an
+`assets/minecraft/textures/block` tree, or be a flat directory of `<block>.png`
+files). The per-block resolution defaults to 8 pixels and can be changed with
+`--texture-scale <pixels>` (1–16); higher values give more detail at the cost of
+larger tiles. Each block's texture is normalized to its flat map color, so biome
+tinting and depth shading are preserved, and blocks without a matching texture
+fall back to the flat color.
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive

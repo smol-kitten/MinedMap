@@ -447,6 +447,12 @@ window.createMap = function () {
 		const mapLayer = new MinedMapLayer(mipmaps, 'map', tile_extension);
 		mapLayer.addTo(map);
 
+		const baseMaps = {};
+		if (features.textured) {
+			baseMaps['Map'] = mapLayer;
+			baseMaps['Textured'] = new MinedMapLayer(mipmaps, 'textured', tile_extension);
+		}
+
 		const lightLayer = new MinedMapLayer(mipmaps, 'light', tile_extension);
 		overlayMaps['Illumination'] = lightLayer;
 		if (params.light)
@@ -483,7 +489,7 @@ window.createMap = function () {
 			overlayMaps['Signs'] = signLayer;
 		}
 
-		L.control.layers({}, overlayMaps).addTo(map);
+		L.control.layers(baseMaps, overlayMaps).addTo(map);
 
 		const coordControl = new CoordControl();
 		coordControl.addTo(map);
