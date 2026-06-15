@@ -154,7 +154,9 @@ All coordinates are chunk coordinates (block coordinate `>> 4`).
 
 Passing `--overlay-layers` additionally writes this data into the viewer's
 output directory and exposes it as toggleable viewer layers: an inhabited-time
-heatmap, built-up areas, and rail / farmland / portal chunk markers.
+heatmap, built-up areas, rail / farmland / portal chunk markers, and — for Java
+Edition worlds whose seed could be read — a slime-chunk layer. The viewer also
+gains a "Region grid" overlay drawing lines along region boundaries.
 
 ### Topographic layer
 

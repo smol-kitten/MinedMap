@@ -15,6 +15,7 @@ use rayon::prelude::*;
 use tracing::{debug, info, warn};
 
 use super::common::*;
+use super::java_random;
 use super::overlay::{self, OverlayData};
 use super::texture;
 use crate::{
@@ -165,6 +166,8 @@ struct SingleRegionProcessor<'a> {
 	texture_atlas: Option<&'a texture::TextureAtlas>,
 	/// How to render unrecognized blocks
 	unknown_blocks: resource::UnknownBlockMode,
+	/// World seed for the slime-chunk overlay, if available
+	world_seed: Option<i64>,
 	/// Format of generated map tiles
 	image_format: image::ImageFormat,
 }
@@ -213,6 +216,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			textured_needed,
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
+			world_seed: processor.config.world_seed,
 			image_format: processor.config.tile_image_format(),
 		})
 	}
@@ -318,9 +322,12 @@ impl<'a> SingleRegionProcessor<'a> {
 		chunk_data: world::de::Chunk,
 	) -> Result<()> {
 		if self.overlays_needed {
-			let info = overlay::java_chunk_overlay_info(&chunk_data);
 			let abs_x = self.coords.x * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.x.0);
 			let abs_z = self.coords.z * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.z.0);
+			let mut info = overlay::java_chunk_overlay_info(&chunk_data);
+			info.slime = self
+				.world_seed
+				.is_some_and(|seed| java_random::is_slime_chunk(seed, abs_x, abs_z));
 			data.overlay.add(abs_x, abs_z, &info);
 		}
 

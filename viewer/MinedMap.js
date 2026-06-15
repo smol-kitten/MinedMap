@@ -330,6 +330,10 @@ async function loadOverlays(groups) {
 		addChunkRects(groups['Portals'], f.end_portal || [], {
 			stroke: false, fillColor: '#33cccc', fillOpacity: 0.6,
 		});
+		if (groups['Slime chunks'])
+			addChunkRects(groups['Slime chunks'], f.slime || [], {
+				stroke: false, fillColor: '#33cc44', fillOpacity: 0.45,
+			});
 	} catch (err) {
 		console.error('Failed to load overlay data', err);
 	}
@@ -483,10 +487,40 @@ window.createMap = function () {
 				'Farmland': L.layerGroup(),
 				'Portals': L.layerGroup(),
 			};
+			if (features.slime)
+				overlayGroups['Slime chunks'] = L.layerGroup();
 			for (const [name, group] of Object.entries(overlayGroups))
 				overlayMaps[name] = group;
 			loadOverlays(overlayGroups);
 		}
+
+		// Region grid overlay (lines every 512 blocks), redrawn on view changes
+		const gridLayer = L.layerGroup();
+		overlayMaps['Region grid'] = gridLayer;
+		const redrawGrid = function () {
+			if (!map.hasLayer(gridLayer))
+				return;
+			gridLayer.clearLayers();
+			const step = 512;
+			const b = map.getBounds().pad(0.1);
+			const west = Math.floor(b.getWest() / step) * step;
+			const east = Math.ceil(b.getEast() / step) * step;
+			const south = Math.floor(b.getSouth() / step) * step;
+			const north = Math.ceil(b.getNorth() / step) * step;
+			// Avoid drawing an excessive number of lines when zoomed far out
+			if ((east - west) / step + (north - south) / step > 400)
+				return;
+			const style = {color: '#ffffff', weight: 1, opacity: 0.35, interactive: false};
+			for (let x = west; x <= east; x += step)
+				L.polyline([[south, x], [north, x]], style).addTo(gridLayer);
+			for (let y = south; y <= north; y += step)
+				L.polyline([[y, west], [y, east]], style).addTo(gridLayer);
+		};
+		map.on('moveend', redrawGrid);
+		map.on('layeradd', function (ev) {
+			if (ev.layer === gridLayer)
+				redrawGrid();
+		});
 
 		let signLayer;
 		if (features.signs) {

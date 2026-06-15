@@ -56,6 +56,8 @@ struct Features {
 	biome: bool,
 	/// Overlay data layers (heatmap, features)
 	overlays: bool,
+	/// Slime-chunk overlay layer
+	slime: bool,
 	/// High-resolution textured layer
 	textured: bool,
 }
@@ -249,6 +251,7 @@ impl<'a> MetadataWriter<'a> {
 			height: self.config.height_layer,
 			biome: self.config.biome_layer,
 			overlays: self.config.overlay_layers,
+			slime: self.config.overlay_layers && self.config.world_seed.is_some(),
 			textured: self.config.block_textures.is_some(),
 		};
 

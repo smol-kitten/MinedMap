@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added a slime-chunk overlay layer
+
+  When `--overlay-layers` is used on a Java Edition world, slime chunks are
+  computed from the world seed and shown as a toggleable viewer layer. A
+  "Region grid" overlay was also added to the viewer.
+
 - Added `--biome-layer` option
 
   Generates a biome/climate map layer, selectable in the viewer as "Biomes".

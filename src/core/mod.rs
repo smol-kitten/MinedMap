@@ -4,6 +4,7 @@ mod bedrock;
 mod common;
 mod entity_collector;
 mod heightmap;
+mod java_random;
 mod metadata_writer;
 mod overlay;
 mod region_group;
