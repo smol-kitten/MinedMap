@@ -278,8 +278,14 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	let tiles = TileMipmapper::new(config, &overworld_regions).run()?;
 	MetadataWriter::new(config, &tiles).run()?;
 
-	// Bedrock structure data uses a different storage scheme and is not yet
-	// extracted, but still write an (empty) structures.json for the viewer.
+	// Bedrock has no per-chunk structure data like Java, but village bounds are
+	// stored under VILLAGE_*_INFO keys; surface them as structures.
+	if config.structures {
+		overlays
+			.overworld
+			.structures
+			.extend(collect_villages(&mut db));
+	}
 	super::write_structures(config, &overlays)?;
 
 	let overlay_dirs = config.overlay_output_dirs();
@@ -289,6 +295,43 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	}
 
 	Ok(())
+}
+
+/// Collects village bounding boxes from `VILLAGE_*_INFO` LevelDB keys
+///
+/// Village info records store the village bounds as `X0`/`Z0` (minimum) and
+/// `X1`/`Z1` (maximum) integers; these are surfaced as `minecraft:village`
+/// structures.
+fn collect_villages(db: &mut BedrockDb) -> Vec<overlay::Structure> {
+	let mut keys = Vec::new();
+	let _ = db.for_each_key(|key| {
+		if key.starts_with(b"VILLAGE_") && key.ends_with(b"_INFO") {
+			keys.push(key.to_vec());
+		}
+	});
+
+	let mut result = Vec::new();
+	for key in keys {
+		let Some(data) = db.get(&key) else {
+			continue;
+		};
+		let Ok(Some(value)) = nbt::Reader::new(&data).read_value() else {
+			continue;
+		};
+		let get = |name: &str| match value.get(name) {
+			Some(nbt::Value::Int(v)) => Some(*v),
+			_ => None,
+		};
+		if let (Some(x0), Some(z0), Some(x1), Some(z1)) =
+			(get("X0"), get("Z0"), get("X1"), get("Z1"))
+		{
+			result.push(overlay::Structure {
+				structure_type: "minecraft:village".to_string(),
+				bb: [x0.min(x1), z0.min(z1), x0.max(x1), z0.max(z1)],
+			});
+		}
+	}
+	result
 }
 
 /// Iterates the database once to record which chunk keys exist
@@ -826,6 +869,26 @@ mod test {
 		data
 	}
 
+	/// Builds a `VILLAGE_*_INFO` value (little-endian NBT) with the given bounds
+	fn village_info_value(x0: i32, z0: i32, x1: i32, z1: i32) -> Vec<u8> {
+		let mut data = vec![10u8, 0, 0]; // compound, empty name
+		for (name, value) in [
+			("X0", x0),
+			("Y0", 0),
+			("Z0", z0),
+			("X1", x1),
+			("Y1", 0),
+			("Z1", z1),
+		] {
+			data.push(3); // int tag
+			data.extend_from_slice(&(name.len() as u16).to_le_bytes());
+			data.extend_from_slice(name.as_bytes());
+			data.extend_from_slice(&value.to_le_bytes());
+		}
+		data.push(0); // end
+		data
+	}
+
 	/// Builds a block entity value (little-endian NBT) for a single block entity
 	fn block_entity_value(id: &str) -> Vec<u8> {
 		let mut data = vec![10u8, 0, 0]; // compound, empty name
@@ -872,7 +935,7 @@ mod test {
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,
 			world_seed: None,
-			structures: false,
+			structures: true,
 			poi_markers: false,
 			poi_dir: input_dir.join("poi"),
 			region_dir: input_dir.join("region"),
@@ -926,6 +989,9 @@ mod test {
 			// A second chunk with a cave column, to exercise the cave layer
 			let cave_key = subchunk_key(Dimension::Overworld, 1, 0, 0);
 			db.put(&cave_key, &cave_subchunk_value()).unwrap();
+			// A village record, to exercise village/structure extraction
+			db.put(b"VILLAGE_test_INFO", &village_info_value(10, 20, 40, 60))
+				.unwrap();
 			db.flush().unwrap();
 			db.close().unwrap();
 		}
@@ -1008,6 +1074,15 @@ mod test {
 		// Overlay layer data must also be written into the viewer output dir
 		assert!(output_dir.join("overlays/block_features.json").is_file());
 		assert!(output_dir.join("overlays/inhabited_heatmap.json").is_file());
+
+		// The village must have been extracted into structures.json
+		let structures: serde_json::Value =
+			serde_json::from_slice(&std::fs::read(output_dir.join("structures.json")).unwrap())
+				.unwrap();
+		assert_eq!(
+			structures["structures"],
+			serde_json::json!([{ "type": "minecraft:village", "bb": [10, 20, 40, 60] }])
+		);
 
 		let _ = std::fs::remove_dir_all(&base);
 	}
