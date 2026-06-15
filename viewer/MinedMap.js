@@ -410,6 +410,7 @@ window.createMap = function () {
 			params.z = parseFloat(args['z']);
 			params.light = parseInt(args['light']);
 			params.height = parseInt(args['height']);
+			params.biome = parseInt(args['biome']);
 			params.signs = parseInt(args['signs'] ?? '1');
 			params.marker = (args['marker'] ?? '').split(',').map((i) => +i);
 
@@ -466,6 +467,14 @@ window.createMap = function () {
 				map.addLayer(heightLayer);
 		}
 
+		let biomeLayer;
+		if (features.biome) {
+			biomeLayer = new MinedMapLayer(mipmaps, 'biome', tile_extension);
+			overlayMaps['Biomes'] = biomeLayer;
+			if (params.biome)
+				map.addLayer(biomeLayer);
+		}
+
 		if (features.overlays) {
 			const overlayGroups = {
 				'Inhabited time': L.layerGroup(),
@@ -508,6 +517,8 @@ window.createMap = function () {
 				ret += '&light=1';
 			if (features.height && map.hasLayer(heightLayer))
 				ret += '&height=1';
+			if (features.biome && map.hasLayer(biomeLayer))
+				ret += '&biome=1';
 			if (features.signs && !map.hasLayer(signLayer))
 				ret += '&signs=0';
 			if (params.marker) {
@@ -523,7 +534,7 @@ window.createMap = function () {
 
 		const refreshHash = function (ev) {
 			if (ev.type === 'layeradd' || ev.type === 'layerremove') {
-				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer)
+				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer)
 					return;
 			}
 
@@ -564,6 +575,13 @@ window.createMap = function () {
 					map.addLayer(heightLayer);
 				else
 					map.removeLayer(heightLayer);
+			}
+
+			if (features.biome) {
+				if (params.biome)
+					map.addLayer(biomeLayer);
+				else
+					map.removeLayer(biomeLayer);
 			}
 
 			if (features.signs) {

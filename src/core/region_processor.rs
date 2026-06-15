@@ -163,6 +163,8 @@ struct SingleRegionProcessor<'a> {
 	textured_needed: bool,
 	/// Texture atlas for the textured layer, if enabled
 	texture_atlas: Option<&'a texture::TextureAtlas>,
+	/// How to render unrecognized blocks
+	unknown_blocks: resource::UnknownBlockMode,
 	/// Format of generated map tiles
 	image_format: image::ImageFormat,
 }
@@ -210,6 +212,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			overlays_needed: processor.config.wants_overlays(),
 			textured_needed,
 			texture_atlas: processor.texture_atlas.as_ref(),
+			unknown_blocks: processor.config.unknown_blocks,
 			image_format: processor.config.tile_image_format(),
 		})
 	}
@@ -341,8 +344,14 @@ impl<'a> SingleRegionProcessor<'a> {
 				names,
 				block_light,
 				depths,
-			}) = world::layer::top_layer(&mut data.biome_list, &mut data.name_list, &chunk)
-				.with_context(|| format!("Failed to process chunk {chunk_coords:?}"))?
+			}) = world::layer::top_layer(
+				&mut data.biome_list,
+				&mut data.name_list,
+				self.textured_needed,
+				self.unknown_blocks,
+				&chunk,
+			)
+			.with_context(|| format!("Failed to process chunk {chunk_coords:?}"))?
 		{
 			if let (true, Some(atlas), Some(textured)) = (
 				self.textured_needed,

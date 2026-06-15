@@ -88,6 +88,11 @@ fn parse_layer(data: &[u8], pos: &mut usize) -> Result<SubChunkLayer> {
 	if runtime {
 		bail!("Runtime block palettes are not supported in saved data");
 	}
+	// Valid Bedrock palettes use at most 16 bits per block; reject anything
+	// larger (which would also cause a divide-by-zero below) as corrupt data.
+	if bits > 16 {
+		bail!("Invalid subchunk palette bit width {bits}");
+	}
 
 	let word_count = if bits == 0 {
 		0
@@ -193,5 +198,17 @@ mod test {
 			Some("minecraft:stone")
 		);
 		assert_eq!(layer.name_at(block_offset(0, 1, 0)), Some("minecraft:air"));
+	}
+
+	#[test]
+	fn test_invalid_bits_rejected() {
+		// A corrupt bit width must produce an error instead of panicking with a
+		// divide-by-zero (32 / bits == 0 for bits > 32).
+		let data = vec![8u8, 1, 40u8]; // version 8, 1 layer, header bits = 20
+		assert!(parse_block_layer(&data).is_err());
+
+		// Truncated data must also be handled gracefully.
+		assert!(parse_block_layer(&[8u8]).is_err());
+		assert!(parse_block_layer(&[]).unwrap().is_none());
 	}
 }

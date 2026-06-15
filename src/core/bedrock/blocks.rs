@@ -5,7 +5,7 @@
 //! cases. This table covers the common surface blocks whose names differ; unknown
 //! blocks fall back to a neutral color in the renderer.
 
-use minedmap_resource::{BlockColor, BlockType, BlockTypes};
+use minedmap_resource::{BlockColor, BlockType, BlockTypes, UnknownBlockMode};
 
 /// Translates a Bedrock block name to the equivalent Java Edition identifier
 ///
@@ -42,16 +42,21 @@ pub fn translate_block_name(name: &str) -> &str {
 
 /// Resolves the [BlockColor] for a Bedrock block name
 ///
-/// Returns the neutral fallback color and `true` for the unknown flag if the
-/// block could not be mapped to a known Java block type.
-pub fn block_color(name: &str, block_types: &BlockTypes) -> (BlockColor, bool) {
+/// Returns `None` for unknown blocks when [UnknownBlockMode::Hide] is in effect,
+/// and `true` for the second tuple element if the block could not be mapped to a
+/// known Java block type.
+pub fn block_color(
+	name: &str,
+	block_types: &BlockTypes,
+	unknown: UnknownBlockMode,
+) -> (Option<BlockColor>, bool) {
 	let java_name = translate_block_name(name);
 	match block_types.get(java_name) {
 		Some(block_type) => {
 			let _: &BlockType = block_type;
-			(block_type.block_color, false)
+			(Some(block_type.block_color), false)
 		}
-		None => (BlockColor::NEUTRAL, true),
+		None => (BlockColor::unknown(name, unknown), true),
 	}
 }
 
@@ -71,11 +76,25 @@ mod test {
 	#[test]
 	fn test_block_color_known_and_unknown() {
 		let block_types = BlockTypes::default();
-		let (_, unknown) = block_color("minecraft:stone", &block_types);
+		let (color, unknown) = block_color("minecraft:stone", &block_types, UnknownBlockMode::Gray);
 		assert!(!unknown);
-		let (color, unknown) = block_color("minecraft:totally_made_up_block", &block_types);
+		assert!(color.is_some());
+
+		// Unknown blocks are hidden by default, visible in gray/color modes
+		let (hidden, unknown) = block_color(
+			"minecraft:made_up_block",
+			&block_types,
+			UnknownBlockMode::Hide,
+		);
 		assert!(unknown);
-		assert_eq!(color.color, BlockColor::NEUTRAL.color);
-		assert!(color.is(minedmap_resource::BlockFlag::Opaque));
+		assert!(hidden.is_none());
+
+		let (gray, _) = block_color(
+			"minecraft:made_up_block",
+			&block_types,
+			UnknownBlockMode::Gray,
+		);
+		assert_eq!(gray.unwrap().color, BlockColor::NEUTRAL.color);
+		assert!(gray.unwrap().is(minedmap_resource::BlockFlag::Opaque));
 	}
 }

@@ -4,6 +4,16 @@
 
 ### Added
 
+- Added `--biome-layer` option
+
+  Generates a biome/climate map layer, selectable in the viewer as "Biomes".
+
+- Added `--unknown-blocks <hide|gray|color>` option
+
+  Controls how unrecognized (for example modded) blocks are rendered. The
+  default `hide` keeps the previous behavior; `gray` and `color` make unknown
+  blocks visible, improving compatibility with modded worlds.
+
 - Added Bedrock Edition (LevelDB) support
 
   Worlds stored in Mojang's LevelDB format can now be rendered. The edition is
@@ -32,6 +42,16 @@
 
   Generates an additional topographic ("Topography") map layer that shades the
   map by terrain elevation, selectable in the viewer.
+
+### Changed
+
+- Hardened Bedrock subchunk decoding against malformed data (a corrupt palette
+  bit width could previously cause a panic).
+
+### Fixed
+
+- Avoided an unnecessary per-block string allocation during map generation when
+  the textured layer is not in use.
 
 ## [2.8.0] - 2026-05-29
 

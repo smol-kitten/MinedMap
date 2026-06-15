@@ -182,6 +182,29 @@ larger tiles. Each block's texture is normalized to its flat map color, so biome
 tinting and depth shading are preserved, and blocks without a matching texture
 fall back to the flat color.
 
+### Biome layer
+
+Passing `--biome-layer` generates a `biome` tile layer coloring the map by
+biome, selectable in the viewer as "Biomes". Biomes that define a grass color
+use it directly; the rest are colored by climate (temperature from blue to red,
+downfall from pale to saturated).
+
+### Modded and unknown blocks
+
+By default, blocks that MinedMap does not recognize (for example blocks added by
+mods, or by a Minecraft version newer than MinedMap supports) are treated as
+transparent and not drawn. For modded worlds this can leave large holes in the
+map. The `--unknown-blocks` option changes this:
+
+* `hide` (default) — keep the historical behavior (unknown blocks are invisible)
+* `gray` — draw unknown blocks in a neutral gray
+* `color` — draw each unknown block type in a stable, distinct color derived from
+  its name
+
+When combined with `--block-textures` pointed at a modpack's resource pack,
+unknown blocks that have a matching texture in the pack are drawn with that
+texture; the rest fall back to the color chosen by `--unknown-blocks`.
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive
