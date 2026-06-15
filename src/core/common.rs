@@ -208,6 +208,31 @@ impl Edition {
 	}
 }
 
+/// `WorldGenSettings` element of level.dat, used to read the world seed (1.16+)
+#[derive(Debug, Deserialize)]
+struct SeedWorldGenSettings {
+	/// World seed
+	seed: Option<i64>,
+}
+
+/// `Data` element of level.dat, reduced to the world seed fields
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SeedDataInner {
+	/// World seed (pre-1.16)
+	random_seed: Option<i64>,
+	/// World generation settings containing the seed (1.16+)
+	world_gen_settings: Option<SeedWorldGenSettings>,
+}
+
+/// Minimal level.dat structure for reading the world seed
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct SeedData {
+	/// The `Data` field
+	data: SeedDataInner,
+}
+
 /// Common configuration based on command line arguments
 #[derive(Debug)]
 pub struct Config {
@@ -229,6 +254,8 @@ pub struct Config {
 	pub texture_scale: u32,
 	/// How to render unrecognized (for example modded) blocks
 	pub unknown_blocks: crate::resource::UnknownBlockMode,
+	/// World seed, used for the slime-chunk overlay (Java Edition only)
+	pub world_seed: Option<i64>,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -269,8 +296,8 @@ impl Config {
 			region_dir = [&args.input_dir, Path::new("region")].iter().collect();
 		}
 
-		let level_dat_path = [&args.input_dir, Path::new("level.dat")].iter().collect();
-		let level_dat_old_path = [&args.input_dir, Path::new("level.dat_old")]
+		let level_dat_path: PathBuf = [&args.input_dir, Path::new("level.dat")].iter().collect();
+		let level_dat_old_path: PathBuf = [&args.input_dir, Path::new("level.dat_old")]
 			.iter()
 			.collect();
 		let processed_dir: PathBuf = [&args.output_dir, Path::new("processed")].iter().collect();
@@ -287,6 +314,12 @@ impl Config {
 
 		let edition = args.edition.resolve(&args.input_dir);
 
+		// The slime-chunk algorithm is Java-specific, so only read the seed for
+		// Java worlds.
+		let world_seed = (edition != Edition::Bedrock)
+			.then(|| Self::read_world_seed(&level_dat_path, &level_dat_old_path))
+			.flatten();
+
 		Ok(Config {
 			edition,
 			input_dir: args.input_dir.clone(),
@@ -297,6 +330,7 @@ impl Config {
 			block_textures: args.block_textures.clone(),
 			texture_scale: args.texture_scale,
 			unknown_blocks: args.unknown_blocks.into(),
+			world_seed,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -310,6 +344,17 @@ impl Config {
 			sign_patterns,
 			sign_transforms,
 		})
+	}
+
+	/// Reads the world seed from a Java Edition level.dat (1.16+ or older)
+	fn read_world_seed(level_dat_path: &Path, level_dat_old_path: &Path) -> Option<i64> {
+		let data: SeedData = crate::nbt::data::from_file(level_dat_path)
+			.or_else(|_| crate::nbt::data::from_file(level_dat_old_path))
+			.ok()?;
+		data.data
+			.world_gen_settings
+			.and_then(|settings| settings.seed)
+			.or(data.data.random_seed)
 	}
 
 	/// Parses the sign prefixes and sign filters into a [RegexSet]
@@ -452,4 +497,33 @@ where
 		coords.x.0 as i64 * BLOCKS_PER_CHUNK as i64,
 		coords.z.0 as i64 * BLOCKS_PER_CHUNK as i64,
 	);
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	fn seed_from_nbt(value: &fastnbt::Value) -> Option<i64> {
+		let bytes = fastnbt::to_bytes(value).unwrap();
+		let data: SeedData = fastnbt::from_bytes(&bytes).unwrap();
+		data.data
+			.world_gen_settings
+			.and_then(|settings| settings.seed)
+			.or(data.data.random_seed)
+	}
+
+	#[test]
+	fn test_world_seed_parsing() {
+		// 1.16+ layout: Data.WorldGenSettings.seed
+		let v1_16 = fastnbt::nbt!({
+			"Data": { "WorldGenSettings": { "seed": 123456789i64 } },
+		});
+		assert_eq!(seed_from_nbt(&v1_16), Some(123456789));
+
+		// Pre-1.16 layout: Data.RandomSeed
+		let v0 = fastnbt::nbt!({
+			"Data": { "RandomSeed": -42i64 },
+		});
+		assert_eq!(seed_from_nbt(&v0), Some(-42));
+	}
 }

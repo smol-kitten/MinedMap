@@ -748,6 +748,7 @@ mod test {
 			block_textures: Some(input_dir.join("textures")),
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,
+			world_seed: None,
 			region_dir: input_dir.join("region"),
 			level_dat_path: input_dir.join("level.dat"),
 			level_dat_old_path: input_dir.join("level.dat_old"),

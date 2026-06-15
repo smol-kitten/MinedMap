@@ -92,6 +92,8 @@ pub struct ChunkOverlayInfo {
 	pub nether_portal: bool,
 	/// The chunk's block palette contains an end portal block
 	pub end_portal: bool,
+	/// The chunk is a slime chunk (Java Edition, derived from the world seed)
+	pub slime: bool,
 	/// Number of player-placed block entities in the chunk
 	pub built: u32,
 }
@@ -127,6 +129,8 @@ pub struct DimensionOverlay {
 	pub nether_portal: Vec<(i32, i32)>,
 	/// `[chunkX, chunkZ]` of chunks containing an end portal block
 	pub end_portal: Vec<(i32, i32)>,
+	/// `[chunkX, chunkZ]` of slime chunks
+	pub slime: Vec<(i32, i32)>,
 	/// `[chunkX, chunkZ, score]` for chunks with a "built" score > 0
 	pub built: Vec<(i32, i32, u32)>,
 }
@@ -149,6 +153,9 @@ impl DimensionOverlay {
 		if info.end_portal {
 			self.end_portal.push((chunk_x, chunk_z));
 		}
+		if info.slime {
+			self.slime.push((chunk_x, chunk_z));
+		}
 		if info.built > 0 {
 			self.built.push((chunk_x, chunk_z, info.built));
 		}
@@ -161,6 +168,7 @@ impl DimensionOverlay {
 		self.farmland.append(&mut other.farmland);
 		self.nether_portal.append(&mut other.nether_portal);
 		self.end_portal.append(&mut other.end_portal);
+		self.slime.append(&mut other.slime);
 		self.built.append(&mut other.built);
 	}
 
@@ -171,6 +179,7 @@ impl DimensionOverlay {
 		self.farmland.sort_unstable();
 		self.nether_portal.sort_unstable();
 		self.end_portal.sort_unstable();
+		self.slime.sort_unstable();
 		self.built.sort_unstable_by_key(|&(x, z, _)| (x, z));
 	}
 }
@@ -260,6 +269,8 @@ struct FeaturesDimensionOutput<'a> {
 	nether_portal: &'a [(i32, i32)],
 	/// Chunks containing end portal blocks
 	end_portal: &'a [(i32, i32)],
+	/// Slime chunks
+	slime: &'a [(i32, i32)],
 	/// Chunks with a "built" score
 	built: &'a [(i32, i32, u32)],
 }
@@ -271,6 +282,7 @@ impl<'a> From<&'a DimensionOverlay> for FeaturesDimensionOutput<'a> {
 			farmland: &value.farmland,
 			nether_portal: &value.nether_portal,
 			end_portal: &value.end_portal,
+			slime: &value.slime,
 			built: &value.built,
 		}
 	}
@@ -465,6 +477,7 @@ mod test {
 	fn test_features_shape() {
 		let dim = DimensionOverlay {
 			rail: vec![(1, 2)],
+			slime: vec![(5, 6)],
 			built: vec![(3, 4, 7)],
 			..Default::default()
 		};
@@ -479,9 +492,9 @@ mod test {
 			json,
 			concat!(
 				r#"{"overworld":{"rail":[[1,2]],"farmland":[],"nether_portal":[],"#,
-				r#""end_portal":[],"built":[[3,4,7]]},"#,
-				r#""nether":{"rail":[],"farmland":[],"nether_portal":[],"end_portal":[],"built":[]},"#,
-				r#""end":{"rail":[],"farmland":[],"nether_portal":[],"end_portal":[],"built":[]}}"#,
+				r#""end_portal":[],"slime":[[5,6]],"built":[[3,4,7]]},"#,
+				r#""nether":{"rail":[],"farmland":[],"nether_portal":[],"end_portal":[],"slime":[],"built":[]},"#,
+				r#""end":{"rail":[],"farmland":[],"nether_portal":[],"end_portal":[],"slime":[],"built":[]}}"#,
 			)
 		);
 	}
