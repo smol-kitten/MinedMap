@@ -299,23 +299,21 @@ fn apply_stats(player: &mut Player, stats_dir: &Path) {
 			return;
 		}
 	};
-	let stats = root.get("stats").unwrap_or(&serde_json::Value::Null);
-	let custom = stats
-		.get("minecraft:custom")
-		.cloned()
-		.unwrap_or(serde_json::Value::Null);
+	let null = serde_json::Value::Null;
+	let stats = root.get("stats").unwrap_or(&null);
+	let custom = stats.get("minecraft:custom").unwrap_or(&null);
 
 	player.stats = Some(Stats {
 		// `play_time` replaced the older `play_one_minute` key in 1.17.
-		play_time: custom_stat(&custom, "minecraft:play_time")
-			.max(custom_stat(&custom, "minecraft:play_one_minute")),
-		deaths: custom_stat(&custom, "minecraft:deaths"),
-		mob_kills: custom_stat(&custom, "minecraft:mob_kills"),
-		player_kills: custom_stat(&custom, "minecraft:player_kills"),
-		walk_cm: custom_stat(&custom, "minecraft:walk_one_cm"),
-		sprint_cm: custom_stat(&custom, "minecraft:sprint_one_cm"),
-		swim_cm: custom_stat(&custom, "minecraft:swim_one_cm"),
-		fly_cm: custom_stat(&custom, "minecraft:aviate_one_cm"),
+		play_time: custom_stat(custom, "minecraft:play_time")
+			.max(custom_stat(custom, "minecraft:play_one_minute")),
+		deaths: custom_stat(custom, "minecraft:deaths"),
+		mob_kills: custom_stat(custom, "minecraft:mob_kills"),
+		player_kills: custom_stat(custom, "minecraft:player_kills"),
+		walk_cm: custom_stat(custom, "minecraft:walk_one_cm"),
+		sprint_cm: custom_stat(custom, "minecraft:sprint_one_cm"),
+		swim_cm: custom_stat(custom, "minecraft:swim_one_cm"),
+		fly_cm: custom_stat(custom, "minecraft:aviate_one_cm"),
 		blocks_mined: sum_category(stats, "minecraft:mined"),
 		blocks_placed: sum_category(stats, "minecraft:used"),
 	});
@@ -335,44 +333,75 @@ struct UserCacheEntry {
 	uuid: String,
 }
 
-/// Loads name caches, searching the input directory and its parent
+/// Loads a single name cache file, auto-detecting the format
 ///
-/// On a dedicated server the world directory is a subdirectory of the server
+/// Accepts a Forge/NeoForge `usernamecache.json` (a `{uuid: name}` object) or a
+/// vanilla `usercache.json` (an array of `{name, uuid, expiresOn}`). Existing
+/// entries are kept, so earlier (higher-priority) sources win.
+fn load_cache_file(path: &Path, cache: &mut NameCache) {
+	let data = match std::fs::read(path) {
+		Ok(data) => data,
+		Err(_) => return,
+	};
+	if let Ok(map) = serde_json::from_slice::<HashMap<String, String>>(&data) {
+		for (uuid, name) in map {
+			cache.entry(uuid.to_lowercase()).or_insert(name);
+		}
+		return;
+	}
+	if let Ok(entries) = serde_json::from_slice::<Vec<UserCacheEntry>>(&data) {
+		for entry in entries {
+			cache.entry(entry.uuid.to_lowercase()).or_insert(entry.name);
+		}
+	}
+}
+
+/// Builds the UUID→name cache
+///
+/// When explicit `overrides` are given, only those files are loaded. Otherwise
+/// the default caches are searched in the input directory and its parent — on a
+/// dedicated server the world directory is a subdirectory of the server
 /// directory, and `usercache.json` / `usernamecache.json` live next to the
 /// world directory rather than inside it.
-fn load_name_cache(input_dir: &Path) -> NameCache {
+fn build_name_cache(input_dir: &Path, overrides: &[PathBuf]) -> NameCache {
 	let mut cache = NameCache::new();
+
+	if !overrides.is_empty() {
+		for path in overrides {
+			load_cache_file(path, &mut cache);
+		}
+		return cache;
+	}
+
 	let mut dirs = vec![input_dir.to_path_buf()];
 	if let Some(parent) = input_dir.parent() {
 		dirs.push(parent.to_path_buf());
 	}
-
 	for dir in dirs {
-		// Forge/NeoForge `usernamecache.json`: a plain {uuid: name} object.
-		if let Ok(data) = std::fs::read(dir.join("usernamecache.json"))
-			&& let Ok(map) = serde_json::from_slice::<HashMap<String, String>>(&data)
-		{
-			for (uuid, name) in map {
-				cache.entry(uuid.to_lowercase()).or_insert(name);
-			}
-		}
-		// Vanilla `usercache.json`: an array of {name, uuid, expiresOn}.
-		if let Ok(data) = std::fs::read(dir.join("usercache.json"))
-			&& let Ok(entries) = serde_json::from_slice::<Vec<UserCacheEntry>>(&data)
-		{
-			for entry in entries {
-				cache.entry(entry.uuid.to_lowercase()).or_insert(entry.name);
-			}
-		}
+		// Prefer the Forge/NeoForge cache, which tends to be more up to date.
+		load_cache_file(&dir.join("usernamecache.json"), &mut cache);
+		load_cache_file(&dir.join("usercache.json"), &mut cache);
 	}
 
 	cache
 }
 
 /// Collects the player data of a Java Edition world
-pub fn collect(input_dir: &Path) -> Vec<Player> {
-	let player_dir: PathBuf = [input_dir, Path::new("playerdata")].iter().collect();
-	let stats_dir: PathBuf = [input_dir, Path::new("stats")].iter().collect();
+///
+/// `player_dir` and `stats_dir` override the default `<input>/playerdata` and
+/// `<input>/stats` locations; `usercache_files` overrides the name-cache search.
+pub fn collect(
+	input_dir: &Path,
+	player_dir: Option<&Path>,
+	stats_dir: Option<&Path>,
+	usercache_files: &[PathBuf],
+) -> Vec<Player> {
+	let player_dir: PathBuf = player_dir
+		.map(Path::to_path_buf)
+		.unwrap_or_else(|| [input_dir, Path::new("playerdata")].iter().collect());
+	let stats_dir: PathBuf = stats_dir
+		.map(Path::to_path_buf)
+		.unwrap_or_else(|| [input_dir, Path::new("stats")].iter().collect());
 
 	let mut files = Vec::new();
 	if let Ok(dir) = player_dir.read_dir() {
@@ -385,7 +414,7 @@ pub fn collect(input_dir: &Path) -> Vec<Player> {
 		}
 	}
 
-	let name_cache = load_name_cache(input_dir);
+	let name_cache = build_name_cache(input_dir, usercache_files);
 
 	let mut players: Vec<Player> = files
 		.par_iter()
@@ -519,7 +548,7 @@ mod test {
 		)
 		.unwrap();
 
-		let players = collect(&world);
+		let players = collect(&world, None, None, &[]);
 		assert_eq!(players.len(), 1);
 		let player = &players[0];
 		assert_eq!(player.uuid, uuid);
@@ -530,6 +559,50 @@ mod test {
 		assert_eq!(player.stats.as_ref().unwrap().deaths, 7);
 
 		let _ = std::fs::remove_dir_all(&base);
+	}
+
+	#[test]
+	fn test_name_cache_formats_and_override() {
+		let dir = std::env::temp_dir().join(format!(
+			"minedmap-namecache-test-{}-{:?}",
+			std::process::id(),
+			std::thread::current().id()
+		));
+		std::fs::create_dir_all(&dir).unwrap();
+
+		// Vanilla usercache.json (array)
+		let usercache = serde_json::json!([
+			{ "name": "Alex", "uuid": "AAAAAAAA-0000-0000-0000-000000000001" },
+		]);
+		let usercache_path = dir.join("usercache.json");
+		std::fs::write(&usercache_path, serde_json::to_vec(&usercache).unwrap()).unwrap();
+
+		// Forge/NeoForge usernamecache.json (object)
+		let usernamecache = serde_json::json!({
+			"bbbbbbbb-0000-0000-0000-000000000002": "Notch",
+		});
+		let usernamecache_path = dir.join("usernamecache.json");
+		std::fs::write(
+			&usernamecache_path,
+			serde_json::to_vec(&usernamecache).unwrap(),
+		)
+		.unwrap();
+
+		// Explicit overrides load both formats, case-insensitively keyed
+		let cache = build_name_cache(
+			Path::new("/nonexistent"),
+			&[usercache_path, usernamecache_path],
+		);
+		assert_eq!(
+			cache.get("aaaaaaaa-0000-0000-0000-000000000001"),
+			Some(&"Alex".to_string())
+		);
+		assert_eq!(
+			cache.get("bbbbbbbb-0000-0000-0000-000000000002"),
+			Some(&"Notch".to_string())
+		);
+
+		let _ = std::fs::remove_dir_all(&dir);
 	}
 
 	#[test]

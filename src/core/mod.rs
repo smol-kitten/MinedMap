@@ -130,6 +130,23 @@ pub struct Args {
 	/// path is printed to stdout.
 	#[arg(long, value_name = "DIR")]
 	pub emit_player_data: Option<PathBuf>,
+	/// Override the player data directory (default: `<input>/playerdata`)
+	///
+	/// Useful when the `playerdata` directory is not inside the world directory
+	/// passed as the input, for example on a server with a non-standard layout.
+	#[arg(long, value_name = "DIR")]
+	pub player_data_dir: Option<PathBuf>,
+	/// Override the player statistics directory (default: `<input>/stats`)
+	#[arg(long, value_name = "DIR")]
+	pub stats_dir: Option<PathBuf>,
+	/// Player name cache file for `--emit-player-data`
+	///
+	/// Accepts a vanilla `usercache.json` (array) or a Forge/NeoForge
+	/// `usernamecache.json` (object); the format is detected automatically. May
+	/// be given multiple times. When set, these files are used instead of
+	/// searching the input directory and its parent for the default caches.
+	#[arg(long, value_name = "FILE")]
+	pub usercache: Vec<PathBuf>,
 	/// Generate viewer overlay layers from the per-chunk overlay data
 	///
 	/// Writes the overlay data into the output directory and exposes it in the
@@ -313,7 +330,12 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 
 	if let Some(dir) = &config.emit_player_data {
 		crate::io::fs::create_dir_all(dir)?;
-		let players = player::collect(&config.input_dir);
+		let players = player::collect(
+			&config.input_dir,
+			config.player_data_dir.as_deref(),
+			config.player_stats_dir.as_deref(),
+			&config.usercache_files,
+		);
 		write_json_emit(&dir.join("players.json"), &players)?;
 	}
 

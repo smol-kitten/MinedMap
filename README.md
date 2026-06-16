@@ -216,6 +216,19 @@ Player UUIDs are taken from the `playerdata` file names. Bedrock Edition player
 data is not yet supported; passing the option for a Bedrock world logs a warning
 and skips the file.
 
+When the relevant files are not laid out in the standard way (for example when
+the input is a world directory but the caches live elsewhere), the locations can
+be overridden:
+
+* `--player-data-dir <dir>` — use a specific `playerdata` directory instead of
+  `<input>/playerdata`;
+* `--stats-dir <dir>` — use a specific statistics directory instead of
+  `<input>/stats`;
+* `--usercache <file>` — load player names from the given cache file(s) instead
+  of searching for `usercache.json` / `usernamecache.json`. Both the vanilla
+  array format and the Forge/NeoForge object format are accepted (auto-detected),
+  and the option may be given multiple times.
+
 ### Topographic layer
 
 Passing `--height-layer` generates an additional `height` tile layer that shades

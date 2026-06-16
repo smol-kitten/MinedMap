@@ -12,6 +12,10 @@
   `usercache.json` / `usernamecache.json`) for Java Edition worlds, so
   downstream tools no longer need to parse the NBT player files themselves.
 
+  The `playerdata` and `stats` directories and the name cache files can be
+  overridden with `--player-data-dir`, `--stats-dir` and `--usercache` for
+  non-standard server layouts.
+
 - Added automated nightly release builds
 
   The CI workflow now publishes a rolling `nightly` prerelease with Linux,

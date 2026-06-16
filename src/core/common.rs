@@ -276,6 +276,12 @@ pub struct Config {
 	pub emit_overlays: Option<PathBuf>,
 	/// Directory to emit per-player data to, if requested
 	pub emit_player_data: Option<PathBuf>,
+	/// Override for the player data directory
+	pub player_data_dir: Option<PathBuf>,
+	/// Override for the player statistics directory
+	pub player_stats_dir: Option<PathBuf>,
+	/// Explicit player name cache files (overriding auto-detection)
+	pub usercache_files: Vec<PathBuf>,
 	/// Whether to generate viewer overlay layers from the overlay data
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
@@ -422,6 +428,9 @@ impl Config {
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
 			emit_player_data: args.emit_player_data.clone(),
+			player_data_dir: args.player_data_dir.clone(),
+			player_stats_dir: args.stats_dir.clone(),
+			usercache_files: args.usercache.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
