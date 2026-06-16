@@ -730,6 +730,7 @@ dependencies = [
  "flate2",
  "minedmap-types",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
