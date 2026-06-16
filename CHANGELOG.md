@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added automated nightly release builds
+
+  The CI workflow now publishes a rolling `nightly` prerelease with Linux,
+  Windows and macOS binaries (plus the viewer archive) on every push to `main`
+  and once daily, so the latest development builds are downloadable without
+  building from source.
+
 - Added `--nether` and `--end` options
 
   Render the nether and/or end dimensions in addition to the overworld (both
