@@ -285,6 +285,15 @@ impl OverlayData {
 		}
 	}
 
+	/// Returns a reference to the data for a dimension
+	pub fn dimension(&self, dim: Dimension) -> &DimensionOverlay {
+		match dim {
+			Dimension::Overworld => &self.overworld,
+			Dimension::Nether => &self.nether,
+			Dimension::End => &self.end,
+		}
+	}
+
 	/// Sorts all dimensions for deterministic output
 	fn sort(&mut self) {
 		for dim in Dimension::ALL {
@@ -325,18 +334,6 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 	fs::create_with_tmpfile(path, |file| {
 		serde_json::to_writer(file, value).context("Failed to serialize overlay data")
 	})
-}
-
-/// Serialization shape of `structures.json`
-#[derive(Serialize)]
-struct StructuresOutput<'a> {
-	/// Generated structures
-	structures: &'a [Structure],
-}
-
-/// Writes the `structures.json` file
-pub fn write_structures(path: &Path, structures: &[Structure]) -> Result<()> {
-	write_json(path, &StructuresOutput { structures }).context("Failed to write structures.json")
 }
 
 /// Serialization shape of `inhabited_heatmap.json`

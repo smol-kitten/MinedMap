@@ -581,13 +581,43 @@ impl Config {
 		let entities_dir: PathBuf = [&processed_dir, Path::new("entities")].iter().collect();
 		let entities_path_final: PathBuf =
 			[&entities_dir, Path::new("entities.bin")].iter().collect();
+		let (poi_dir, entity_region_dir) = match dimension {
+			Dimension::Overworld => (self.poi_dir.clone(), self.entity_region_dir.clone()),
+			Dimension::Nether => (
+				Self::dim_sub_input(&self.input_dir, "the_nether", "DIM-1", "poi"),
+				Self::dim_sub_input(&self.input_dir, "the_nether", "DIM-1", "entities"),
+			),
+			Dimension::End => (
+				Self::dim_sub_input(&self.input_dir, "the_end", "DIM1", "poi"),
+				Self::dim_sub_input(&self.input_dir, "the_end", "DIM1", "entities"),
+			),
+		};
 		Config {
 			dim_subdir,
 			region_dir,
 			processed_dir,
 			entities_dir,
 			entities_path_final,
+			poi_dir,
+			entity_region_dir,
 			..self.clone()
+		}
+	}
+
+	/// Detects a per-dimension input subdirectory (modern or legacy layout)
+	fn dim_sub_input(input_dir: &Path, modern_dim: &str, legacy_dim: &str, sub: &str) -> PathBuf {
+		let modern: PathBuf = [
+			input_dir,
+			Path::new(&format!("dimensions/minecraft/{modern_dim}/{sub}")),
+		]
+		.iter()
+		.collect();
+		if modern.is_dir() {
+			modern
+		} else {
+			[input_dir, Path::new(&format!("{legacy_dim}/{sub}"))]
+				.iter()
+				.collect()
 		}
 	}
 

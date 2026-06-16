@@ -300,7 +300,7 @@ function addHeatRects(group, entries, valueIndex, color) {
 	}
 }
 
-async function loadOverlays(groups) {
+async function loadOverlays(groups, dim) {
 	const fetchJSON = async (path) => {
 		const response = await fetch(path, {cache: 'no-store'});
 		if (!response.ok)
@@ -314,10 +314,10 @@ async function loadOverlays(groups) {
 			fetchJSON('data/overlays/block_features.json'),
 		]);
 
-		const inhabited = heatmap.overworld || [];
+		const inhabited = heatmap[dim] || [];
 		addHeatRects(groups['Inhabited time'], inhabited, 2, '#cc2222');
 
-		const f = features.overworld || {};
+		const f = features[dim] || {};
 		addHeatRects(groups['Built-up areas'], f.built || [], 2, '#ee8800');
 		addChunkRects(groups['Rails'], f.rail || [], {
 			stroke: false, fillColor: '#3366cc', fillOpacity: 0.6,
@@ -350,7 +350,7 @@ const POI_CATEGORIES = [
 	['other', 'Other POIs', '#88cc88', 3],
 ];
 
-async function loadPois(groups) {
+async function loadPois(groups, dim) {
 	let data;
 	try {
 		const response = await fetch('data/pois.json', {cache: 'no-store'});
@@ -362,11 +362,12 @@ async function loadPois(groups) {
 		return;
 	}
 
+	const d = data[dim] || {};
 	for (const [key, name, color, radius] of POI_CATEGORIES) {
 		const group = groups[name];
 		if (!group)
 			continue;
-		for (const [x, z] of data[key] || []) {
+		for (const [x, z] of d[key] || []) {
 			L.circleMarker([-z, x], {
 				radius,
 				color: '#000000',
@@ -389,7 +390,7 @@ function structureColor(type) {
 	return `hsl(${hash % 360}, 65%, 55%)`;
 }
 
-async function loadStructures(group) {
+async function loadStructures(group, dim) {
 	let data;
 	try {
 		const response = await fetch('data/structures.json', {cache: 'no-store'});
@@ -401,7 +402,7 @@ async function loadStructures(group) {
 		return;
 	}
 
-	for (const structure of data.structures || []) {
+	for (const structure of data[dim] || []) {
 		const [minX, minZ, maxX, maxZ] = structure.bb;
 		const color = structureColor(structure.type);
 		// Bounding box maxima are inclusive block coordinates, so extend by 1
@@ -417,7 +418,7 @@ async function loadStructures(group) {
 	}
 }
 
-async function loadMobs(groups) {
+async function loadMobs(groups, dim) {
 	let data;
 	try {
 		const response = await fetch('data/mobs.json', {cache: 'no-store'});
@@ -429,6 +430,7 @@ async function loadMobs(groups) {
 		return;
 	}
 
+	const d = data[dim] || {};
 	const styles = {
 		'Hostile mobs': ['hostile', '#cc3333'],
 		'Passive mobs': ['passive', '#33aa55'],
@@ -437,7 +439,7 @@ async function loadMobs(groups) {
 		const group = groups[name];
 		if (!group)
 			continue;
-		for (const [x, z] of data[key] || []) {
+		for (const [x, z] of d[key] || []) {
 			L.circleMarker([-z, x], {
 				radius: 3,
 				color: '#000000',
@@ -450,14 +452,14 @@ async function loadMobs(groups) {
 	}
 }
 
-async function loadSigns(signLayer) {
+async function loadSigns(signLayer, dim) {
 	const response = await fetch('data/entities.json', {cache: 'no-store'});
 	const res = await response.json();
 
 	const groups = {};
 
 	// Group signs by x,z coordinates
-	for (const sign of res.signs) {
+	for (const sign of (res[dim] || {}).signs || []) {
 		const key = coordKey([sign.x, sign.z]);
 		const group = groups[key] ??= [];
 		group.push(sign);
@@ -524,12 +526,6 @@ window.createMap = function () {
 		const isOverworld = dim === 'overworld';
 		const prefix = isOverworld ? '' : dim + '/';
 		const mipmaps = (dimensions[dim] || {}).mipmaps || res.mipmaps;
-
-		// Marker/overlay-data layers are collected for the overworld only.
-		if (!isOverworld) {
-			for (const f of ['signs', 'pois', 'mobs', 'structures', 'overlays', 'slime'])
-				features[f] = false;
-		}
 
 		const updateParams = function () {
 			const args = parseHash();
@@ -656,7 +652,7 @@ window.createMap = function () {
 				overlayGroups['Slime chunks'] = L.layerGroup();
 			for (const [name, group] of Object.entries(overlayGroups))
 				overlayMaps[name] = group;
-			loadOverlays(overlayGroups);
+			loadOverlays(overlayGroups, dim);
 		}
 
 		// Region grid overlay (lines every 512 blocks), redrawn on view changes
@@ -691,7 +687,7 @@ window.createMap = function () {
 		if (features.structures) {
 			const structureGroup = L.layerGroup();
 			overlayMaps['Structures'] = structureGroup;
-			loadStructures(structureGroup);
+			loadStructures(structureGroup, dim);
 		}
 
 		// Mob marker layers
@@ -702,7 +698,7 @@ window.createMap = function () {
 			};
 			for (const [name, group] of Object.entries(mobGroups))
 				overlayMaps[name] = group;
-			loadMobs(mobGroups);
+			loadMobs(mobGroups, dim);
 		}
 
 		// Point-of-interest marker layers
@@ -713,13 +709,13 @@ window.createMap = function () {
 				poiGroups[name] = group;
 				overlayMaps[name] = group;
 			}
-			loadPois(poiGroups);
+			loadPois(poiGroups, dim);
 		}
 
 		let signLayer;
 		if (features.signs) {
 			signLayer = L.layerGroup();
-			loadSigns(signLayer);
+			loadSigns(signLayer, dim);
 			if (params.signs)
 				map.addLayer(signLayer);
 

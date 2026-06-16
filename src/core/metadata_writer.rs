@@ -243,34 +243,44 @@ impl<'a> MetadataWriter<'a> {
 		}
 	}
 
-	/// Generates [Entities] data from collected entity lists
-	fn entities(&self) -> Result<Entities> {
+	/// Generates per-dimension [Entities] data from collected entity lists
+	fn entities(&self) -> Result<BTreeMap<&'static str, Entities>> {
+		use crate::core::overlay::Dimension;
+
+		let mut by_dimension = BTreeMap::new();
 		// The Bedrock path does not collect sign entities.
 		if self.config.edition == Edition::Bedrock {
-			return Ok(Entities::default());
+			by_dimension.insert(Dimension::Overworld.key(), Entities::default());
+			return Ok(by_dimension);
 		}
 
-		let data: ProcessedEntities =
-			storage::read_file(&self.config.entities_path_final, storage::Format::Json)
-				.context("Failed to read entity data file")?;
+		for (dimension, _) in self.dimension_tiles.iter() {
+			let dim_config = self
+				.config
+				.for_dimension(*dimension, std::path::PathBuf::new());
+			let data: ProcessedEntities =
+				storage::read_file(&dim_config.entities_path_final, storage::Format::Json)
+					.context("Failed to read entity data file")?;
 
-		let ret = Entities {
-			signs: data
-				.block_entities
-				.into_iter()
-				.filter(|entity| match &entity.data {
-					BlockEntityData::Sign(sign) => self.sign_filter(sign),
-				})
-				.map(|mut entity| {
-					match &mut entity.data {
-						BlockEntityData::Sign(sign) => self.sign_transform(sign),
-					};
-					entity
-				})
-				.collect(),
-		};
+			let entities = Entities {
+				signs: data
+					.block_entities
+					.into_iter()
+					.filter(|entity| match &entity.data {
+						BlockEntityData::Sign(sign) => self.sign_filter(sign),
+					})
+					.map(|mut entity| {
+						match &mut entity.data {
+							BlockEntityData::Sign(sign) => self.sign_transform(sign),
+						};
+						entity
+					})
+					.collect(),
+			};
+			by_dimension.insert(dimension.key(), entities);
+		}
 
-		Ok(ret)
+		Ok(by_dimension)
 	}
 
 	/// Runs the viewer metadata file generation
