@@ -169,16 +169,20 @@ struct SingleRegionProcessor<'a> {
 	lightmap_needed: bool,
 	/// True if entity output file needs to be updated
 	entities_needed: bool,
-	/// True if per-chunk overlay data should be collected
-	overlays_needed: bool,
+	/// True if any emit data (overlay/structures) is wanted for this region
+	emit_needed: bool,
+	/// True if the per-region overlay/structure data must be (re)computed
+	overlay_needed: bool,
+	/// Cached per-region overlay/structure output filename
+	overlay_cache_path: PathBuf,
+	/// Timestamp of the cached overlay data (if valid)
+	overlay_timestamp: Option<SystemTime>,
 	/// True if the textured tile needs to be updated
 	textured_needed: bool,
 	/// True if the cave tile needs to be updated
 	cave_needed: bool,
 	/// True if the mob-spawn tile needs to be updated
 	mob_spawn_needed: bool,
-	/// True if generated structures should be collected
-	structures_needed: bool,
 	/// Texture atlas for the textured layer, if enabled
 	texture_atlas: Option<&'a texture::TextureAtlas>,
 	/// How to render unrecognized blocks
@@ -213,6 +217,21 @@ impl<'a> SingleRegionProcessor<'a> {
 		let mob_spawn_path = processor.config.tile_path(TileKind::Mobspawn, 0, coords);
 		let mob_spawn_timestamp = fs::read_timestamp(&mob_spawn_path, MOBSPAWN_FILE_META_VERSION);
 
+		let overlay_cache_path = processor.config.overlay_cache_path(coords);
+		let overlay_timestamp = fs::read_timestamp(&overlay_cache_path, EMIT_CACHE_META_VERSION);
+
+		// Emit data (overlay heatmap/features and structures) shares one cached
+		// per-region contribution, recomputed only when the source changed (or
+		// when --since says so); otherwise it is reused from the cache.
+		let emit_needed =
+			processor.config.wants_overlays() || processor.config.collect_structures();
+		let overlay_needed = emit_needed
+			&& super::region_cache::needs_recompute(
+				Some(input_timestamp),
+				overlay_timestamp,
+				processor.config.since,
+			);
+
 		let output_needed = Some(input_timestamp) > output_timestamp;
 		let lightmap_needed = Some(input_timestamp) > lightmap_timestamp;
 		let entities_needed = Some(input_timestamp) > entities_timestamp;
@@ -240,11 +259,13 @@ impl<'a> SingleRegionProcessor<'a> {
 			output_needed,
 			lightmap_needed,
 			entities_needed,
-			overlays_needed: processor.config.wants_overlays(),
+			emit_needed,
+			overlay_needed,
+			overlay_cache_path,
+			overlay_timestamp,
 			textured_needed,
 			cave_needed,
 			mob_spawn_needed,
-			structures_needed: processor.config.collect_structures(),
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
 			world_seed: processor.config.world_seed,
@@ -294,6 +315,29 @@ impl<'a> SingleRegionProcessor<'a> {
 			.into();
 			image::LumaA([0, (192.0 * (1.0 - v / 15.0)) as u8])
 		})
+	}
+
+	/// Loads the cached per-region overlay contribution, or an empty default
+	fn load_overlay(&self) -> overlay::DimensionOverlay {
+		if self.overlay_timestamp.is_some() {
+			storage::read_file(&self.overlay_cache_path, storage::Format::Postcard)
+				.unwrap_or_default()
+		} else {
+			Default::default()
+		}
+	}
+
+	/// Saves the per-region overlay contribution to the cache
+	///
+	/// The timestamp is the time of the last modification of the input region data.
+	fn save_overlay(&self, overlay: &overlay::DimensionOverlay) -> Result<()> {
+		storage::write_file(
+			&self.overlay_cache_path,
+			overlay,
+			storage::Format::Postcard,
+			EMIT_CACHE_META_VERSION,
+			self.input_timestamp,
+		)
 	}
 
 	/// Saves processed region data
@@ -418,7 +462,9 @@ impl<'a> SingleRegionProcessor<'a> {
 		chunk_coords: ChunkCoords,
 		chunk_data: world::de::Chunk,
 	) -> Result<()> {
-		if self.overlays_needed {
+		// Overlay info and structures share one cached contribution, so both are
+		// collected together whenever the region's emit data is being rebuilt.
+		if self.overlay_needed {
 			let abs_x = self.coords.x * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.x.0);
 			let abs_z = self.coords.z * CHUNKS_PER_REGION as i32 + i32::from(chunk_coords.z.0);
 			let mut info = overlay::java_chunk_overlay_info(&chunk_data);
@@ -426,9 +472,6 @@ impl<'a> SingleRegionProcessor<'a> {
 				.world_seed
 				.is_some_and(|seed| java_random::is_slime_chunk(seed, abs_x, abs_z));
 			data.overlay.add(abs_x, abs_z, &info);
-		}
-
-		if self.structures_needed {
 			data.overlay
 				.structures
 				.extend(overlay::java_chunk_structures(&chunk_data));
@@ -546,17 +589,23 @@ impl<'a> SingleRegionProcessor<'a> {
 		if !self.output_needed
 			&& !self.lightmap_needed
 			&& !self.entities_needed
-			&& !self.overlays_needed
+			&& !self.overlay_needed
 			&& !self.textured_needed
 			&& !self.cave_needed
 			&& !self.mob_spawn_needed
-			&& !self.structures_needed
 		{
 			debug!(
 				"Skipping unchanged region r.{}.{}.mca",
 				self.coords.x, self.coords.z
 			);
-			return Ok((RegionProcessorStatus::Skipped, Default::default()));
+			// When emit data is wanted but unchanged, reuse the cached overlay
+			// contribution so the aggregated output still includes this region.
+			let overlay = if self.emit_needed {
+				self.load_overlay()
+			} else {
+				Default::default()
+			};
+			return Ok((RegionProcessorStatus::Skipped, overlay));
 		}
 
 		debug!(
@@ -579,6 +628,13 @@ impl<'a> SingleRegionProcessor<'a> {
 		}
 
 		if let Err(err) = self.process_chunks(&mut data) {
+			// Reuse any cached overlay so a transient read error does not drop
+			// this region from the aggregated emit output.
+			let overlay = if self.emit_needed {
+				self.load_overlay()
+			} else {
+				Default::default()
+			};
 			if self.output_timestamp.is_some()
 				&& self.lightmap_timestamp.is_some()
 				&& self.entities_timestamp.is_some()
@@ -587,17 +643,28 @@ impl<'a> SingleRegionProcessor<'a> {
 					"Failed to process region {:?}, using old data: {:?}",
 					self.coords, err
 				);
-				return Ok((RegionProcessorStatus::ErrorOk, Default::default()));
+				return Ok((RegionProcessorStatus::ErrorOk, overlay));
 			} else {
 				warn!(
 					"Failed to process region {:?}, no old data available: {:?}",
 					self.coords, err
 				);
-				return Ok((RegionProcessorStatus::ErrorMissing, Default::default()));
+				return Ok((RegionProcessorStatus::ErrorMissing, overlay));
 			}
 		}
 
-		let overlay = std::mem::take(&mut data.overlay);
+		// Determine the overlay contribution: freshly computed and cached when
+		// rebuilt, otherwise loaded from cache (the region may have been
+		// processed only for changed tiles while its emit data was unchanged).
+		let overlay = if self.overlay_needed {
+			let overlay = std::mem::take(&mut data.overlay);
+			self.save_overlay(&overlay)?;
+			overlay
+		} else if self.emit_needed {
+			self.load_overlay()
+		} else {
+			Default::default()
+		};
 		let textured = data.textured.take();
 		let cave = data.cave.take();
 		let mob_spawn = data.mob_spawn.take();

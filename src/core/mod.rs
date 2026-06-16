@@ -11,6 +11,7 @@ mod mob;
 mod overlay;
 mod player;
 mod poi;
+mod region_cache;
 mod region_group;
 mod region_processor;
 mod texture;
@@ -21,10 +22,10 @@ mod tile_renderer;
 mod world_stats;
 
 use std::{
-	path::PathBuf,
+	path::{Path, PathBuf},
 	sync::mpsc::{self, Receiver},
 	thread,
-	time::Duration,
+	time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -158,6 +159,16 @@ pub struct Args {
 	/// printed to stdout.
 	#[arg(long, value_name = "DIR")]
 	pub emit_world_stats: Option<PathBuf>,
+	/// Only re-read region files modified after this Unix timestamp (seconds)
+	///
+	/// Speeds up incremental `--emit-*` runs: regions not modified after the
+	/// given time reuse their cached per-region contribution (POIs, mobs,
+	/// overlay/structure data) instead of being read again. This requires a
+	/// previous run to have populated the cache; a region without a cache entry
+	/// is always re-read, so no data is lost. Does not affect map tiles, which
+	/// are already updated incrementally.
+	#[arg(long, value_name = "UNIX_TS")]
+	pub since: Option<i64>,
 	/// Generate viewer overlay layers from the per-chunk overlay data
 	///
 	/// Writes the overlay data into the output directory and exposes it in the
@@ -349,14 +360,32 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	}
 
 	if let Some(dir) = &config.emit_player_data {
-		crate::io::fs::create_dir_all(dir)?;
-		let players = player::collect(
-			&config.input_dir,
-			config.player_data_dir.as_deref(),
-			config.player_stats_dir.as_deref(),
-			&config.usercache_files,
-		);
-		write_json_emit(&dir.join("players.json"), &players)?;
+		let out = dir.join("players.json");
+		let player_dir = config
+			.player_data_dir
+			.clone()
+			.unwrap_or_else(|| config.input_dir.join("playerdata"));
+		let stats_dir = config
+			.player_stats_dir
+			.clone()
+			.unwrap_or_else(|| config.input_dir.join("stats"));
+		// With --since, reuse the existing players.json when no player or stats
+		// file changed after the given time.
+		let up_to_date = config
+			.since
+			.is_some_and(|s| out.exists() && !any_file_newer(&[&player_dir, &stats_dir], s));
+		if up_to_date {
+			print_emitted(&out);
+		} else {
+			crate::io::fs::create_dir_all(dir)?;
+			let players = player::collect(
+				&config.input_dir,
+				config.player_data_dir.as_deref(),
+				config.player_stats_dir.as_deref(),
+				&config.usercache_files,
+			);
+			write_json_emit(&out, &players)?;
+		}
 	}
 
 	if let Some((dir, stats)) = world_stats {
@@ -379,6 +408,25 @@ fn write_json_emit<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Re
 	write_json(path, value)?;
 	print_emitted(path);
 	Ok(())
+}
+
+/// Returns whether any file directly in the given directories is newer than `since`
+///
+/// A file whose modification time cannot be read is treated as changed, so that
+/// incremental `--since` runs never miss an update.
+fn any_file_newer(dirs: &[&Path], since: SystemTime) -> bool {
+	dirs.iter().any(|dir| {
+		let Ok(entries) = dir.read_dir() else {
+			return false;
+		};
+		entries.filter_map(std::result::Result::ok).any(|entry| {
+			entry
+				.metadata()
+				.and_then(|meta| meta.modified())
+				.map(|modified| modified > since)
+				.unwrap_or(true)
+		})
+	})
 }
 
 /// Prints the absolute path of an emitted file to stdout

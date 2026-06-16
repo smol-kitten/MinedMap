@@ -4,6 +4,16 @@
 
 ### Added
 
+- Added incremental `--emit-*` updates and a `--since` option
+
+  Each region's contribution to the marker/overlay outputs (`pois.json`,
+  `mobs.json`, `structures.json`, `inhabited_heatmap.json`, `block_features.json`)
+  is now cached per region, so repeated `--emit-*` runs only re-read the source
+  region files that actually changed instead of every file. `--since <unix-ts>`
+  additionally skips regions not modified after the given time (for example the
+  time of the last `rsync`), reusing their cached contribution; regions without a
+  cache entry are always re-read so no data is lost.
+
 - Added `--emit-world-stats` option
 
   Writes a `world.json` summarizing the world — seed, per-dimension region and

@@ -8,12 +8,10 @@
 //! `pois.json` consumed by the viewer. The output schema is documented in the
 //! README ("Output data files").
 
-use std::{ffi::OsStr, path::Path};
+use std::path::Path;
 
 use anyhow::Result;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use super::common::*;
 
@@ -60,7 +58,7 @@ fn category(poi_type: &str) -> &'static str {
 }
 
 /// Collected POI marker positions by category (block coordinates)
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct PoiData {
 	/// Village meeting points
 	village: Vec<(i32, i32)>,
@@ -90,16 +88,6 @@ impl PoiData {
 		list.push((x, z));
 	}
 
-	/// Merges another [PoiData] into this one
-	fn merge(&mut self, mut other: PoiData) {
-		self.village.append(&mut other.village);
-		self.home.append(&mut other.home);
-		self.jobsite.append(&mut other.jobsite);
-		self.portal.append(&mut other.portal);
-		self.lodestone.append(&mut other.lodestone);
-		self.other.append(&mut other.other);
-	}
-
 	/// Sorts and deduplicates all categories for deterministic output
 	fn finish(&mut self) {
 		for list in [
@@ -114,18 +102,6 @@ impl PoiData {
 			list.dedup();
 		}
 	}
-}
-
-/// Parses a `r.X.Z.mca` POI file name (the X/Z values are not needed)
-fn is_region_filename(file_name: &OsStr) -> bool {
-	file_name
-		.to_str()
-		.map(|name| {
-			let parts: Vec<_> = name.split('.').collect();
-			matches!(parts.as_slice(), ["r", x, z, "mca"]
-				if x.parse::<i32>().is_ok() && z.parse::<i32>().is_ok())
-		})
-		.unwrap_or(false)
 }
 
 /// Reads the POIs of a single POI region file
@@ -146,31 +122,29 @@ fn collect_file(path: &Path) -> Result<PoiData> {
 	Ok(data)
 }
 
-/// Collects the points of interest from the POI files of one dimension
-pub fn collect(config: &Config) -> PoiData {
-	let mut files = Vec::new();
-	if let Ok(dir) = config.poi_dir.read_dir() {
-		for entry in dir.filter_map(Result::ok) {
-			if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-				&& is_region_filename(&entry.file_name())
-			{
-				files.push(entry.path());
-			}
-		}
+impl super::region_cache::Mergeable for PoiData {
+	fn merge(&mut self, mut other: PoiData) {
+		self.village.append(&mut other.village);
+		self.home.append(&mut other.home);
+		self.jobsite.append(&mut other.jobsite);
+		self.portal.append(&mut other.portal);
+		self.lodestone.append(&mut other.lodestone);
+		self.other.append(&mut other.other);
 	}
+}
 
-	let mut data = files
-		.par_iter()
-		.map(|path| {
-			collect_file(path).unwrap_or_else(|err| {
-				warn!("Failed to read POI file {}: {:?}", path.display(), err);
-				PoiData::default()
-			})
-		})
-		.reduce(PoiData::default, |mut a, b| {
-			a.merge(b);
-			a
-		});
+/// Collects the points of interest from the POI files of one dimension
+///
+/// Per-region contributions are cached so unchanged regions are not re-read on
+/// later (incremental) runs; see [super::region_cache].
+pub fn collect(config: &Config) -> PoiData {
+	let mut data: PoiData = super::region_cache::collect_cached(
+		&config.poi_dir,
+		&config.poi_cache_dir(),
+		EMIT_CACHE_META_VERSION,
+		config.since,
+		collect_file,
+	);
 	data.finish();
 	data
 }
