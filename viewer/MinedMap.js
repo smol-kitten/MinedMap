@@ -73,7 +73,7 @@ function signIcon(material, kind) {
 }
 
 const MinedMapLayer = L.TileLayer.extend({
-	initialize: function (mipmaps, layer, tile_extension) {
+	initialize: function (mipmaps, prefix, layer, tile_extension) {
 		L.TileLayer.prototype.initialize.call(this, '', {
 			detectRetina: true,
 			tileSize: 512,
@@ -87,6 +87,7 @@ const MinedMapLayer = L.TileLayer.extend({
 		this.options.maxZoom = undefined;
 
 		this.mipmaps = mipmaps;
+		this.prefix = prefix;
 		this.layer = layer;
 		this.ext = tile_extension;
 	},
@@ -113,7 +114,7 @@ const MinedMapLayer = L.TileLayer.extend({
 			return L.Util.emptyImageUrl;
 
 
-		return `data/${this.layer}/${z}/r.${coords.x}.${coords.y}.${this.ext}`;
+		return `data/${this.prefix}${this.layer}/${z}/r.${coords.x}.${coords.y}.${this.ext}`;
 	},
 });
 
@@ -512,9 +513,23 @@ window.createMap = function () {
 	(async function () {
 		const response = await fetch('data/info.json', {cache: 'no-store'});
 		const res = await response.json();
-		const {mipmaps, spawn} = res;
+		const {spawn} = res;
 		const features = res.features || {};
 		const tile_extension = res.tile_extension || 'png';
+
+		// Dimension selection (overworld unless ?#dim=nether/end is set)
+		const dimensions = res.dimensions || {overworld: {mipmaps: res.mipmaps}};
+		const dimArg = parseHash()['dim'];
+		const dim = dimensions[dimArg] ? dimArg : 'overworld';
+		const isOverworld = dim === 'overworld';
+		const prefix = isOverworld ? '' : dim + '/';
+		const mipmaps = (dimensions[dim] || {}).mipmaps || res.mipmaps;
+
+		// Marker/overlay-data layers are collected for the overworld only.
+		if (!isOverworld) {
+			for (const f of ['signs', 'pois', 'mobs', 'structures', 'overlays', 'slime'])
+				features[f] = false;
+		}
 
 		const updateParams = function () {
 			const args = parseHash();
@@ -562,23 +577,23 @@ window.createMap = function () {
 
 		const overlayMaps = {};
 
-		const mapLayer = new MinedMapLayer(mipmaps, 'map', tile_extension);
+		const mapLayer = new MinedMapLayer(mipmaps, prefix, 'map', tile_extension);
 		mapLayer.addTo(map);
 
 		const baseMaps = {};
 		if (features.textured) {
 			baseMaps['Map'] = mapLayer;
-			baseMaps['Textured'] = new MinedMapLayer(mipmaps, 'textured', tile_extension);
+			baseMaps['Textured'] = new MinedMapLayer(mipmaps, prefix, 'textured', tile_extension);
 		}
 
-		const lightLayer = new MinedMapLayer(mipmaps, 'light', tile_extension);
+		const lightLayer = new MinedMapLayer(mipmaps, prefix, 'light', tile_extension);
 		overlayMaps['Illumination'] = lightLayer;
 		if (params.light)
 			map.addLayer(lightLayer);
 
 		let heightLayer;
 		if (features.height) {
-			heightLayer = new MinedMapLayer(mipmaps, 'height', tile_extension);
+			heightLayer = new MinedMapLayer(mipmaps, prefix, 'height', tile_extension);
 			overlayMaps['Topography'] = heightLayer;
 			if (params.height)
 				map.addLayer(heightLayer);
@@ -586,7 +601,7 @@ window.createMap = function () {
 
 		let biomeLayer;
 		if (features.biome) {
-			biomeLayer = new MinedMapLayer(mipmaps, 'biome', tile_extension);
+			biomeLayer = new MinedMapLayer(mipmaps, prefix, 'biome', tile_extension);
 			overlayMaps['Biomes'] = biomeLayer;
 			if (params.biome)
 				map.addLayer(biomeLayer);
@@ -594,7 +609,7 @@ window.createMap = function () {
 
 		let caveLayer;
 		if (features.cave) {
-			caveLayer = new MinedMapLayer(mipmaps, 'cave', tile_extension);
+			caveLayer = new MinedMapLayer(mipmaps, prefix, 'cave', tile_extension);
 			overlayMaps['Caves'] = caveLayer;
 			if (params.cave)
 				map.addLayer(caveLayer);
@@ -602,7 +617,7 @@ window.createMap = function () {
 
 		let mobspawnLayer;
 		if (features.mobspawn) {
-			mobspawnLayer = new MinedMapLayer(mipmaps, 'mobspawn', tile_extension);
+			mobspawnLayer = new MinedMapLayer(mipmaps, prefix, 'mobspawn', tile_extension);
 			overlayMaps['Mob spawning'] = mobspawnLayer;
 			if (params.mobspawn)
 				map.addLayer(mobspawnLayer);
@@ -610,14 +625,14 @@ window.createMap = function () {
 
 		let contourLayer;
 		if (features.contour) {
-			contourLayer = new MinedMapLayer(mipmaps, 'contour', tile_extension);
+			contourLayer = new MinedMapLayer(mipmaps, prefix, 'contour', tile_extension);
 			overlayMaps['Contours'] = contourLayer;
 			if (params.contour)
 				map.addLayer(contourLayer);
 		}
 
 		// Spawn-chunk boundary (the area kept loaded around the world spawn)
-		{
+		if (isOverworld) {
 			const cx = Math.floor(spawn.x / 16);
 			const cz = Math.floor(spawn.z / 16);
 			const r = 9; // 19x19 chunks
@@ -719,6 +734,37 @@ window.createMap = function () {
 		map.on('mousemove', function(e) {
 			coordControl.update(Math.round(e.latlng.lng), Math.round(-e.latlng.lat));
 		});
+
+		// Dimension switcher (only shown when more than one dimension is rendered)
+		const dimKeys = Object.keys(dimensions);
+		if (dimKeys.length > 1) {
+			const DimControl = L.Control.extend({
+				onAdd: function () {
+					const div = L.DomUtil.create('div', 'leaflet-bar');
+					div.style.background = '#fff';
+					div.style.display = 'flex';
+					for (const key of dimKeys) {
+						const a = L.DomUtil.create('a', '', div);
+						a.href = '#';
+						a.textContent = key.charAt(0).toUpperCase() + key.slice(1);
+						a.style.padding = '0 8px';
+						a.style.width = 'auto';
+						if (key === dim)
+							a.style.fontWeight = 'bold';
+						L.DomEvent.on(a, 'click', function (ev) {
+							L.DomEvent.preventDefault(ev);
+							if (key === dim)
+								return;
+							// Switch dimension via a full reload (zoom levels differ)
+							window.location.hash = key === 'overworld' ? '' : 'dim=' + key;
+							window.location.reload();
+						});
+					}
+					return div;
+				},
+			});
+			new DimControl({position: 'topright'}).addTo(map);
+		}
 
 		const makeHash = function () {
 			let ret = '#x='+params.x+'&z='+params.z;

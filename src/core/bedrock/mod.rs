@@ -276,7 +276,7 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 
 	TileRenderer::new(config, rt, &overworld_regions).run()?;
 	let tiles = TileMipmapper::new(config, &overworld_regions).run()?;
-	MetadataWriter::new(config, &tiles).run()?;
+	MetadataWriter::new(config, &[(Dimension::Overworld, tiles)]).run()?;
 
 	// Bedrock has no per-chunk structure data like Java, but village bounds are
 	// stored under VILLAGE_*_INFO keys; surface them as structures.
@@ -923,6 +923,11 @@ mod test {
 		let processed_dir = output_dir.join("processed");
 		Config {
 			edition: Edition::Bedrock,
+			dim_subdir: std::path::PathBuf::new(),
+			render_nether: false,
+			render_end: false,
+			nether_region_dir: input_dir.join("nether"),
+			end_region_dir: input_dir.join("end"),
 			input_dir: input_dir.to_path_buf(),
 			emit_overlays: Some(overlay_dir.to_path_buf()),
 			overlay_layers: true,

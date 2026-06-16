@@ -1,5 +1,7 @@
 //! The [MetadataWriter] and related types
 
+use std::collections::BTreeMap;
+
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::Serialize;
@@ -74,11 +76,20 @@ struct Features {
 	textured: bool,
 }
 
+/// Per-dimension tile information in the viewer metadata file
+#[derive(Debug, Serialize)]
+struct DimensionMeta<'t> {
+	/// Tile information for each mipmap level
+	mipmaps: Vec<Mipmap<'t>>,
+}
+
 /// Viewer metadata JSON data structure
 #[derive(Debug, Serialize)]
 struct Metadata<'t> {
-	/// Tile information for each mipmap level
+	/// Tile information for each mipmap level (overworld; kept for compatibility)
 	mipmaps: Vec<Mipmap<'t>>,
+	/// Per-dimension tile information (keyed by dimension name)
+	dimensions: BTreeMap<&'static str, DimensionMeta<'t>>,
 	/// Initial spawn point for new players
 	spawn: Spawn,
 	/// Enabled MinedMap features
@@ -98,14 +109,20 @@ struct Entities {
 pub struct MetadataWriter<'a> {
 	/// Common MinedMap configuration from command line
 	config: &'a Config,
-	/// Map of generated tiles for each mipmap level
-	tiles: &'a [TileCoordMap],
+	/// Generated tiles for each mipmap level, per dimension
+	dimension_tiles: &'a [(crate::core::overlay::Dimension, Vec<TileCoordMap>)],
 }
 
 impl<'a> MetadataWriter<'a> {
 	/// Creates a new MetadataWriter
-	pub fn new(config: &'a Config, tiles: &'a [TileCoordMap]) -> Self {
-		MetadataWriter { config, tiles }
+	pub fn new(
+		config: &'a Config,
+		dimension_tiles: &'a [(crate::core::overlay::Dimension, Vec<TileCoordMap>)],
+	) -> Self {
+		MetadataWriter {
+			config,
+			dimension_tiles,
+		}
 	}
 
 	/// Helper to construct a [Mipmap] data structure from a [TileCoordMap]
@@ -273,16 +290,23 @@ impl<'a> MetadataWriter<'a> {
 			textured: self.config.block_textures.is_some(),
 		};
 
-		let mut metadata = Metadata {
-			mipmaps: Vec::new(),
+		let mut dimensions = BTreeMap::new();
+		let mut overworld_mipmaps = Vec::new();
+		for (dimension, tiles) in self.dimension_tiles.iter() {
+			let mipmaps: Vec<Mipmap> = tiles.iter().map(Self::mipmap_entry).collect();
+			if *dimension == crate::core::overlay::Dimension::Overworld {
+				overworld_mipmaps = tiles.iter().map(Self::mipmap_entry).collect();
+			}
+			dimensions.insert(dimension.key(), DimensionMeta { mipmaps });
+		}
+
+		let metadata = Metadata {
+			mipmaps: overworld_mipmaps,
+			dimensions,
 			spawn: self.read_spawn(),
 			features,
 			tile_extension: self.config.tile_extension(),
 		};
-
-		for tile_map in self.tiles.iter() {
-			metadata.mipmaps.push(Self::mipmap_entry(tile_map));
-		}
 
 		fs::create_with_tmpfile(&self.config.viewer_info_path, |file| {
 			serde_json::to_writer(file, &metadata).context("Failed to write info.json")

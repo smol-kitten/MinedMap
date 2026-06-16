@@ -12,7 +12,7 @@ use regex::{Regex, RegexSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-	core::region_processor,
+	core::{overlay::Dimension, region_processor},
 	io::fs::FileMetaVersion,
 	resource::Biome,
 	types::*,
@@ -256,10 +256,20 @@ struct SeedData {
 }
 
 /// Common configuration based on command line arguments
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
 	/// Resolved edition of the input save data
 	pub edition: Edition,
+	/// Output subdirectory for the current dimension (empty for the overworld)
+	pub dim_subdir: PathBuf,
+	/// Whether to also render the nether dimension
+	pub render_nether: bool,
+	/// Whether to also render the end dimension
+	pub render_end: bool,
+	/// Path of input nether region directory
+	pub nether_region_dir: PathBuf,
+	/// Path of input end region directory
+	pub end_region_dir: PathBuf,
 	/// Path of the input Minecraft save directory
 	pub input_dir: PathBuf,
 	/// Directory to emit overlay data to, if requested
@@ -383,6 +393,17 @@ impl Config {
 
 		let edition = args.edition.resolve(&args.input_dir);
 
+		let nether_region_dir = Self::dimension_region_dir(
+			&args.input_dir,
+			"dimensions/minecraft/the_nether/region",
+			"DIM-1/region",
+		);
+		let end_region_dir = Self::dimension_region_dir(
+			&args.input_dir,
+			"dimensions/minecraft/the_end/region",
+			"DIM1/region",
+		);
+
 		// The slime-chunk algorithm is Java-specific, so only read the seed for
 		// Java worlds.
 		let world_seed = (edition != Edition::Bedrock)
@@ -391,6 +412,11 @@ impl Config {
 
 		Ok(Config {
 			edition,
+			dim_subdir: PathBuf::new(),
+			render_nether: args.nether,
+			render_end: args.end,
+			nether_region_dir,
+			end_region_dir,
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
 			overlay_layers: args.overlay_layers,
@@ -510,7 +536,59 @@ impl Config {
 			TileKind::Textured => "textured",
 		};
 		let dir = format!("{prefix}/{level}");
-		[&self.output_dir, Path::new(&dir)].iter().collect()
+		Self::join_dim(&self.output_dir, &self.dim_subdir, Path::new(&dir))
+	}
+
+	/// Joins an output-relative path, inserting the dimension subdirectory
+	fn join_dim(output_dir: &Path, dim_subdir: &Path, rest: &Path) -> PathBuf {
+		if dim_subdir.as_os_str().is_empty() {
+			[output_dir, rest].iter().collect()
+		} else {
+			[output_dir, dim_subdir, rest].iter().collect()
+		}
+	}
+
+	/// Detects a dimension's region directory (modern or legacy layout)
+	fn dimension_region_dir(input_dir: &Path, modern: &str, legacy: &str) -> PathBuf {
+		let modern_dir: PathBuf = [input_dir, Path::new(modern)].iter().collect();
+		if region_processor::has_regions(&modern_dir) {
+			modern_dir
+		} else {
+			[input_dir, Path::new(legacy)].iter().collect()
+		}
+	}
+
+	/// Returns the dimensions to render and their input region directories
+	pub fn dimensions_to_render(&self) -> Vec<(Dimension, PathBuf)> {
+		let mut dims = vec![(Dimension::Overworld, self.region_dir.clone())];
+		if self.render_nether && region_processor::has_regions(&self.nether_region_dir) {
+			dims.push((Dimension::Nether, self.nether_region_dir.clone()));
+		}
+		if self.render_end && region_processor::has_regions(&self.end_region_dir) {
+			dims.push((Dimension::End, self.end_region_dir.clone()));
+		}
+		dims
+	}
+
+	/// Derives a [Config] for a specific dimension and input region directory
+	pub fn for_dimension(&self, dimension: Dimension, region_dir: PathBuf) -> Config {
+		let dim_subdir = match dimension {
+			Dimension::Overworld => PathBuf::new(),
+			Dimension::Nether => PathBuf::from("nether"),
+			Dimension::End => PathBuf::from("end"),
+		};
+		let processed_dir = Self::join_dim(&self.output_dir, &dim_subdir, Path::new("processed"));
+		let entities_dir: PathBuf = [&processed_dir, Path::new("entities")].iter().collect();
+		let entities_path_final: PathBuf =
+			[&entities_dir, Path::new("entities.bin")].iter().collect();
+		Config {
+			dim_subdir,
+			region_dir,
+			processed_dir,
+			entities_dir,
+			entities_path_final,
+			..self.clone()
+		}
 	}
 
 	/// Returns whether per-chunk overlay data should be collected
@@ -593,6 +671,20 @@ mod test {
 			.world_gen_settings
 			.and_then(|settings| settings.seed)
 			.or(data.data.random_seed)
+	}
+
+	#[test]
+	fn test_join_dim() {
+		// Overworld (empty subdir) keeps the path unchanged for compatibility
+		assert_eq!(
+			Config::join_dim(Path::new("/out"), Path::new(""), Path::new("map/0")),
+			PathBuf::from("/out/map/0"),
+		);
+		// Other dimensions are placed under a subdirectory
+		assert_eq!(
+			Config::join_dim(Path::new("/out"), Path::new("nether"), Path::new("map/0")),
+			PathBuf::from("/out/nether/map/0"),
+		);
 	}
 
 	#[test]

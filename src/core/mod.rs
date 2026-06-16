@@ -29,7 +29,7 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use git_version::git_version;
 
-use common::{Config, Edition, ImageFormat, UnknownBlocks};
+use common::{Config, Edition, ImageFormat, TileCoordMap, UnknownBlocks};
 use metadata_writer::MetadataWriter;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher as _};
 use rayon::ThreadPool;
@@ -97,6 +97,18 @@ pub struct Args {
 	/// input is treated as Java Edition.
 	#[arg(long, value_enum, default_value_t)]
 	pub edition: Edition,
+	/// Also render the nether dimension
+	///
+	/// Nether tiles are written under a `nether/` subdirectory and selectable in
+	/// the viewer with the dimension switcher.
+	#[arg(long)]
+	pub nether: bool,
+	/// Also render the end dimension
+	///
+	/// End tiles are written under an `end/` subdirectory and selectable in the
+	/// viewer with the dimension switcher.
+	#[arg(long)]
+	pub end: bool,
 	/// Emit per-chunk overlay data to the given directory
 	///
 	/// Writes `inhabited_heatmap.json` and `block_features.json` describing the
@@ -224,14 +236,34 @@ fn generate(args: &Args, rt: &Runtime) -> Result<()> {
 
 /// Runs all MinedMap generation steps for a Java Edition world
 fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
-	let (regions, overlays) = RegionProcessor::new(config).run()?;
-	TileRenderer::new(config, rt, &regions).run()?;
-	let tiles = TileMipmapper::new(config, &regions).run()?;
-	EntityCollector::new(config, &regions).run()?;
-	MetadataWriter::new(config, &tiles).run()?;
+	use overlay::Dimension;
 
-	write_structures(config, &overlays)?;
-	write_overlays(config, overlays)?;
+	let mut combined_overlays = overlay::OverlayData::default();
+	let mut dimension_tiles: Vec<(Dimension, Vec<TileCoordMap>)> = Vec::new();
+
+	for (dimension, region_dir) in config.dimensions_to_render() {
+		let dim_config = config.for_dimension(dimension, region_dir);
+
+		let (regions, overlays) = RegionProcessor::new(&dim_config).run()?;
+		TileRenderer::new(&dim_config, rt, &regions).run()?;
+		let tiles = TileMipmapper::new(&dim_config, &regions).run()?;
+		// Signs are only collected for the overworld.
+		if dimension == Dimension::Overworld {
+			EntityCollector::new(&dim_config, &regions).run()?;
+		}
+
+		// The region processor accumulates overlay data in the overworld field;
+		// route it into the dimension that was actually processed.
+		let dim_overlay = overlays.overworld;
+		*combined_overlays.dimension_mut(dimension) = dim_overlay;
+
+		dimension_tiles.push((dimension, tiles));
+	}
+
+	MetadataWriter::new(config, &dimension_tiles).run()?;
+
+	write_structures(config, &combined_overlays)?;
+	write_overlays(config, combined_overlays)?;
 
 	if config.poi_markers {
 		poi::PoiCollector::new(config).run()?;
