@@ -358,8 +358,18 @@ fn write_json_emit<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Re
 
 /// Prints the absolute path of an emitted file to stdout
 fn print_emitted(path: &std::path::Path) {
-	let display = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-	println!("{}", display.display());
+	// The file has just been written, so canonicalize normally succeeds; fall
+	// back to joining the working directory so the printed path stays absolute.
+	let abs = std::fs::canonicalize(path).unwrap_or_else(|_| {
+		if path.is_absolute() {
+			path.to_path_buf()
+		} else {
+			std::env::current_dir()
+				.map(|cwd| cwd.join(path))
+				.unwrap_or_else(|_| path.to_path_buf())
+		}
+	});
+	println!("{}", abs.display());
 }
 
 /// Prints the absolute paths of the two overlay-data files already written into
