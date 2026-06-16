@@ -19,6 +19,15 @@
 
 ### Changed
 
+- `--emit-overlays` now writes a consolidated set of derived data
+
+  In addition to `inhabited_heatmap.json` and `block_features.json`, the
+  directory passed to `--emit-overlays` now also receives `structures.json`,
+  `pois.json` and `mobs.json` (Java Edition), so a single run produces the
+  complete derived dataset in one stable, documented location regardless of the
+  viewer-layer flags. The absolute path of every emitted file is printed to
+  stdout, and all files are written atomically.
+
 - Marker and overlay-data layers are now collected per dimension
 
   Signs, POIs, mobs and generated structures are read from each rendered

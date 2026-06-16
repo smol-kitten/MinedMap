@@ -155,21 +155,40 @@ processed for overlay data (see below). A few notes:
 
 ### Overlay data
 
-Passing `--emit-overlays <dir>` makes MinedMap write per-chunk overlay data
-while it walks the chunks during the normal render pass, so that no separate
-pass over the save data is needed. This option works for both Java and Bedrock
-Edition and does not change the generated map tiles. Two JSON files are written
-into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
+Passing `--emit-overlays <dir>` makes MinedMap write all derived per-chunk and
+marker data into one directory while it walks the chunks during the normal
+render pass, so that downstream tools do not need a separate, slow pass over the
+save data. This option works for both Java and Bedrock Edition and does not
+change the generated map tiles.
 
-* `inhabited_heatmap.json` lists `[chunkX, chunkZ, inhabitedTimeTicks]` for every
-  chunk with a non-zero `InhabitedTime`. Bedrock Edition has no equivalent of
-  `InhabitedTime`, so its heatmap entries are always empty.
-* `block_features.json` lists the chunks containing notable blocks — `rail`,
-  `farmland`, `nether_portal` and `end_portal` — as `[chunkX, chunkZ]`, plus a
-  `built` list of `[chunkX, chunkZ, score]` where the score is the number of
-  player-placed block entities (chests, furnaces, hoppers, …) in the chunk.
+The directory `<dir>` is a stable, documented location: the following files are
+written into it (all atomically, via a temporary file that is renamed into
+place), and the **absolute path of every file written is printed to stdout** so
+callers do not have to guess filenames:
 
-All coordinates are chunk coordinates (block coordinate `>> 4`).
+* `inhabited_heatmap.json` — dimension-keyed; lists `[chunkX, chunkZ,
+  inhabitedTimeTicks]` for every chunk with a non-zero `InhabitedTime`. Bedrock
+  Edition has no equivalent of `InhabitedTime`, so its heatmap entries are
+  always empty.
+* `block_features.json` — dimension-keyed; lists the chunks containing notable
+  blocks — `rail`, `farmland`, `nether_portal` and `end_portal` — as `[chunkX,
+  chunkZ]`, plus a `built` list of `[chunkX, chunkZ, score]` where the score is
+  the number of player-placed block entities (chests, furnaces, hoppers, …) in
+  the chunk.
+* `structures.json` — dimension-keyed; the bounding boxes of generated
+  structures.
+* `pois.json` — dimension-keyed points of interest. **Java Edition only.**
+* `mobs.json` — dimension-keyed mob markers. **Java Edition only.**
+
+In other words, `--emit-overlays` forces collection of the structure, POI and
+mob data regardless of the `--structures` / `--poi-markers` / `--mob-markers`
+viewer-layer flags, so a single run produces the complete set in `<dir>`. The
+exact JSON schemas are documented under [Output data files](#output-data-files)
+below. Bedrock Edition does not have Java's POI or entity region files, so it
+emits only `inhabited_heatmap.json`, `block_features.json` and `structures.json`.
+
+All coordinates in these files are chunk coordinates (block coordinate `>> 4`),
+except the structure bounding boxes, which use block coordinates.
 
 Passing `--overlay-layers` additionally writes this data into the viewer's
 output directory and exposes it as toggleable viewer layers: an inhabited-time

@@ -626,6 +626,24 @@ impl Config {
 		self.emit_overlays.is_some() || self.overlay_layers
 	}
 
+	/// Returns whether generated structure bounding boxes should be collected
+	///
+	/// Collection is enabled by the `--structures` viewer layer as well as by
+	/// `--emit-overlays`, which consolidates all derived data into one directory.
+	pub fn collect_structures(&self) -> bool {
+		self.structures || self.emit_overlays.is_some()
+	}
+
+	/// Returns whether points of interest should be collected
+	pub fn collect_pois(&self) -> bool {
+		self.poi_markers || self.emit_overlays.is_some()
+	}
+
+	/// Returns whether mob markers should be collected
+	pub fn collect_mobs(&self) -> bool {
+		self.mob_markers || self.emit_overlays.is_some()
+	}
+
 	/// Returns the directory viewer overlay layers are written to
 	pub fn overlay_layers_dir(&self) -> PathBuf {
 		[&self.output_dir, Path::new("overlays")].iter().collect()

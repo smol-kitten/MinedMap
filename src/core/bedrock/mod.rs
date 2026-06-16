@@ -299,18 +299,29 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 
 	// Bedrock has no per-chunk structure data like Java, but village bounds are
 	// stored under VILLAGE_*_INFO keys; surface them as structures.
-	if config.structures {
+	if config.collect_structures() {
 		overlays
 			.overworld
 			.structures
 			.extend(collect_villages(&mut db));
 	}
-	super::write_structures(config, &overlays)?;
+
+	let structures = super::structures_by_dimension(&overlays);
+	if config.structures {
+		super::write_json(&config.viewer_structures_path, &structures)?;
+	}
 
 	let overlay_dirs = config.overlay_output_dirs();
 	if !overlay_dirs.is_empty() {
 		let dir_refs: Vec<&Path> = overlay_dirs.iter().map(PathBuf::as_path).collect();
 		overlays.write(&dir_refs)?;
+	}
+
+	// Consolidated derived data for downstream tools. Bedrock does not collect
+	// POIs or mob markers, so only the overlay and structure files are emitted.
+	if let Some(dir) = &config.emit_overlays {
+		super::emit_overlay_files(dir);
+		super::write_json_emit(&dir.join("structures.json"), &structures)?;
 	}
 
 	Ok(())
@@ -1122,6 +1133,13 @@ mod test {
 			structures["overworld"],
 			serde_json::json!([{ "type": "minecraft:village", "bb": [10, 20, 40, 60] }])
 		);
+
+		// --emit-overlays consolidates the derived data: structures.json must
+		// also be written into the emit directory alongside the overlay files.
+		let emit_structures: serde_json::Value =
+			serde_json::from_slice(&std::fs::read(overlay_dir.join("structures.json")).unwrap())
+				.unwrap();
+		assert_eq!(emit_structures["overworld"], structures["overworld"]);
 
 		let _ = std::fs::remove_dir_all(&base);
 	}

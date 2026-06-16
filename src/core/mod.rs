@@ -109,11 +109,14 @@ pub struct Args {
 	/// viewer with the dimension switcher.
 	#[arg(long)]
 	pub end: bool,
-	/// Emit per-chunk overlay data to the given directory
+	/// Emit derived per-chunk and marker data to the given directory
 	///
-	/// Writes `inhabited_heatmap.json` and `block_features.json` describing the
-	/// `InhabitedTime` and notable blocks of each chunk, collected during the
-	/// regular render pass. Does not affect the generated map tiles.
+	/// Writes a consolidated set of JSON files into <DIR> for consumption by
+	/// downstream tools: `inhabited_heatmap.json`, `block_features.json`,
+	/// `structures.json`, `pois.json` and `mobs.json` (the latter three are
+	/// dimension-keyed; Bedrock Edition emits only the first three). All files
+	/// are written atomically and their absolute paths are printed to stdout.
+	/// Does not affect the generated map tiles.
 	#[arg(long, value_name = "DIR")]
 	pub emit_overlays: Option<PathBuf>,
 	/// Generate viewer overlay layers from the per-chunk overlay data
@@ -259,10 +262,10 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 		let dim_overlay = overlays.overworld;
 		*combined_overlays.dimension_mut(dimension) = dim_overlay;
 
-		if config.poi_markers {
+		if config.collect_pois() {
 			pois.insert(dimension.key(), poi::collect(&dim_config));
 		}
-		if config.mob_markers {
+		if config.collect_mobs() {
 			mobs.insert(dimension.key(), mob::collect(&dim_config));
 		}
 
@@ -271,14 +274,30 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 
 	MetadataWriter::new(config, &dimension_tiles).run()?;
 
-	write_structures(config, &combined_overlays)?;
-	write_overlays(config, combined_overlays)?;
+	let structures = structures_by_dimension(&combined_overlays);
 
+	// Viewer marker/overlay files at the output root, written only when their
+	// layers are enabled, so the viewer behavior is unchanged.
+	if config.structures {
+		write_json(&config.viewer_structures_path, &structures)?;
+	}
 	if config.poi_markers {
 		write_json(&config.viewer_pois_path, &pois)?;
 	}
 	if config.mob_markers {
 		write_json(&config.viewer_mobs_path, &mobs)?;
+	}
+
+	write_overlays(config, combined_overlays)?;
+
+	// Consolidated derived data for downstream tools: --emit-overlays <dir>
+	// writes all five JSON files into one documented directory and prints the
+	// absolute path of each file as it is written.
+	if let Some(dir) = &config.emit_overlays {
+		emit_overlay_files(dir);
+		write_json_emit(&dir.join("structures.json"), &structures)?;
+		write_json_emit(&dir.join("pois.json"), &pois)?;
+		write_json_emit(&dir.join("mobs.json"), &mobs)?;
 	}
 
 	Ok(())
@@ -291,11 +310,30 @@ fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<
 	})
 }
 
-/// Writes collected per-dimension structure bounding boxes to `structures.json`
-fn write_structures(config: &Config, overlays: &overlay::OverlayData) -> Result<()> {
-	if !config.structures {
-		return Ok(());
-	}
+/// Writes a value as JSON to a file and prints its absolute path to stdout
+fn write_json_emit<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+	write_json(path, value)?;
+	print_emitted(path);
+	Ok(())
+}
+
+/// Prints the absolute path of an emitted file to stdout
+fn print_emitted(path: &std::path::Path) {
+	let display = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+	println!("{}", display.display());
+}
+
+/// Prints the absolute paths of the two overlay-data files already written into
+/// the consolidated `--emit-overlays` directory by [write_overlays]
+fn emit_overlay_files(dir: &std::path::Path) {
+	print_emitted(&dir.join("inhabited_heatmap.json"));
+	print_emitted(&dir.join("block_features.json"));
+}
+
+/// Builds the sorted per-dimension structure map from collected overlay data
+fn structures_by_dimension(
+	overlays: &overlay::OverlayData,
+) -> std::collections::BTreeMap<&'static str, Vec<overlay::Structure>> {
 	use overlay::Dimension;
 	let mut by_dimension = std::collections::BTreeMap::new();
 	for dim in Dimension::ALL {
@@ -303,7 +341,7 @@ fn write_structures(config: &Config, overlays: &overlay::OverlayData) -> Result<
 		structures.sort_by(|a, b| (a.bb, &a.structure_type).cmp(&(b.bb, &b.structure_type)));
 		by_dimension.insert(dim.key(), structures);
 	}
-	write_json(&config.viewer_structures_path, &by_dimension)
+	by_dimension
 }
 
 /// Writes collected overlay data to all configured destinations
