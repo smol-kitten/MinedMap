@@ -80,6 +80,11 @@ impl<'a> Reader<'a> {
 		self.pos
 	}
 
+	/// Returns the number of bytes not yet consumed
+	fn remaining(&self) -> usize {
+		self.data.len() - self.pos
+	}
+
 	/// Reads a fixed number of bytes
 	fn bytes(&mut self, len: usize) -> Result<&'a [u8]> {
 		let end = self
@@ -142,7 +147,9 @@ impl<'a> Reader<'a> {
 				if len < 0 {
 					bail!("Negative list length");
 				}
-				let mut list = Vec::with_capacity(len as usize);
+				// Cap the pre-allocation to the remaining input (each element is
+				// at least one byte) to avoid huge reservations on malformed data.
+				let mut list = Vec::with_capacity((len as usize).min(self.remaining()));
 				for _ in 0..len {
 					// An empty list may have an element tag of 0 (End)
 					if elem_tag == 0 {
@@ -158,7 +165,7 @@ impl<'a> Reader<'a> {
 				if len < 0 {
 					bail!("Negative int array length");
 				}
-				let mut arr = Vec::with_capacity(len as usize);
+				let mut arr = Vec::with_capacity((len as usize).min(self.remaining() / 4));
 				for _ in 0..len {
 					arr.push(self.i32()?);
 				}
@@ -169,7 +176,7 @@ impl<'a> Reader<'a> {
 				if len < 0 {
 					bail!("Negative long array length");
 				}
-				let mut arr = Vec::with_capacity(len as usize);
+				let mut arr = Vec::with_capacity((len as usize).min(self.remaining() / 8));
 				for _ in 0..len {
 					arr.push(self.i64()?);
 				}

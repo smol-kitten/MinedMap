@@ -84,25 +84,48 @@ where
 }
 
 /// Checks whether the contents of two files are equal
+///
+/// The file sizes are compared first as a cheap shortcut, and the contents are
+/// then compared in blocks rather than byte by byte, as this function runs for
+/// every generated file on each (incremental) run.
 pub fn equal(path1: &Path, path2: &Path) -> Result<bool> {
+	let len1 = fs::metadata(path1)
+		.with_context(|| format!("Failed to read metadata of {}", path1.display()))?
+		.len();
+	let len2 = fs::metadata(path2)
+		.with_context(|| format!("Failed to read metadata of {}", path2.display()))?
+		.len();
+	if len1 != len2 {
+		return Ok(false);
+	}
+
 	let mut file1 = BufReader::new(
 		fs::File::open(path1)
 			.with_context(|| format!("Failed to open file {}", path1.display()))?,
-	)
-	.bytes();
+	);
 	let mut file2 = BufReader::new(
 		fs::File::open(path2)
 			.with_context(|| format!("Failed to open file {}", path2.display()))?,
-	)
-	.bytes();
+	);
 
-	Ok(loop {
-		match (file1.next().transpose()?, file2.next().transpose()?) {
-			(Some(b1), Some(b2)) if b1 == b2 => continue,
-			(None, None) => break true,
-			_ => break false,
-		};
-	})
+	let mut buf1 = vec![0u8; 64 * 1024];
+	let mut buf2 = vec![0u8; 64 * 1024];
+	loop {
+		let n = file1
+			.read(&mut buf1)
+			.with_context(|| format!("Failed to read file {}", path1.display()))?;
+		if n == 0 {
+			// The sizes are equal, so both files reach EOF together.
+			break Ok(true);
+		}
+		// The equal sizes guarantee path2 has at least n more bytes.
+		file2
+			.read_exact(&mut buf2[..n])
+			.with_context(|| format!("Failed to read file {}", path2.display()))?;
+		if buf1[..n] != buf2[..n] {
+			break Ok(false);
+		}
+	}
 }
 
 /// Creates a new file, temporarily storing its contents in a temporary file
@@ -183,4 +206,43 @@ where
 	})?;
 
 	Ok(ret)
+}
+
+#[cfg(test)]
+mod test {
+	use super::*;
+
+	#[test]
+	fn test_equal() {
+		let dir = std::env::temp_dir().join(format!(
+			"minedmap-fs-test-{}-{:?}",
+			std::process::id(),
+			std::thread::current().id()
+		));
+		fs::create_dir_all(&dir).unwrap();
+		let write = |name: &str, data: &[u8]| {
+			let path = dir.join(name);
+			fs::write(&path, data).unwrap();
+			path
+		};
+
+		// Multi-block content (larger than the 64 KiB comparison buffer)
+		let big: Vec<u8> = (0..200_000u32).map(|i| i as u8).collect();
+		let mut big_diff = big.clone();
+		*big_diff.last_mut().unwrap() ^= 0xff;
+
+		let a = write("a", &big);
+		let b = write("b", &big);
+		let c = write("c", &big_diff); // same length, last byte differs
+		let d = write("d", b"short");
+		let empty1 = write("e1", b"");
+		let empty2 = write("e2", b"");
+
+		assert!(equal(&a, &b).unwrap());
+		assert!(!equal(&a, &c).unwrap());
+		assert!(!equal(&a, &d).unwrap());
+		assert!(equal(&empty1, &empty2).unwrap());
+
+		let _ = fs::remove_dir_all(&dir);
+	}
 }
