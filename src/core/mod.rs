@@ -129,6 +129,13 @@ pub struct Args {
 	/// regular map tiles.
 	#[arg(long)]
 	pub cave_layer: bool,
+	/// Generate viewer overlays for generated structure bounding boxes (Java Edition)
+	///
+	/// Reads each chunk's structure data and writes the bounding boxes of
+	/// generated structures (villages, fortresses, monuments, …) as rectangles
+	/// shown in the viewer.
+	#[arg(long)]
+	pub structures: bool,
 	/// Generate viewer marker layers for points of interest (Java Edition)
 	///
 	/// Reads the world's POI data (village meeting points, villager beds and job
@@ -203,6 +210,7 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	EntityCollector::new(config, &regions).run()?;
 	MetadataWriter::new(config, &tiles).run()?;
 
+	write_structures(config, &overlays)?;
 	write_overlays(config, overlays)?;
 
 	if config.poi_markers {
@@ -210,6 +218,16 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	}
 
 	Ok(())
+}
+
+/// Writes collected structure bounding boxes to `structures.json`
+fn write_structures(config: &Config, overlays: &overlay::OverlayData) -> Result<()> {
+	if !config.structures {
+		return Ok(());
+	}
+	let mut structures = overlays.overworld.structures.clone();
+	structures.sort_by(|a, b| (a.bb, &a.structure_type).cmp(&(b.bb, &b.structure_type)));
+	overlay::write_structures(&config.viewer_structures_path, &structures)
 }
 
 /// Writes collected overlay data to all configured destinations

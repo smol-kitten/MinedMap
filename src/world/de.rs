@@ -196,6 +196,9 @@ pub struct LevelV0 {
 	/// Cumulative number of ticks players have been in this chunk
 	#[serde(default)]
 	pub inhabited_time: Option<i64>,
+	/// Generated structure data (pre-1.18)
+	#[serde(default)]
+	pub structures: Option<Structures>,
 }
 
 /// Version-specific part of a [Chunk] compound
@@ -218,6 +221,35 @@ pub enum ChunkVariant {
 	},
 }
 
+/// A piece of a generated structure
+#[derive(Debug, Deserialize)]
+pub struct StructurePiece {
+	/// Bounding box `[minX, minY, minZ, maxX, maxY, maxZ]`
+	#[serde(rename = "BB")]
+	pub bb: Option<fastnbt::IntArray>,
+}
+
+/// The start of a generated structure stored in its origin chunk
+#[derive(Debug, Deserialize)]
+pub struct StructureStart {
+	/// Overall bounding box `[minX, minY, minZ, maxX, maxY, maxZ]`
+	#[serde(rename = "BB")]
+	pub bb: Option<fastnbt::IntArray>,
+	/// Structure ID, or `INVALID` for an absent structure
+	pub id: Option<String>,
+	/// Individual structure pieces
+	#[serde(rename = "Children", default)]
+	pub children: Vec<StructurePiece>,
+}
+
+/// Generated structure data of a chunk
+#[derive(Debug, Deserialize)]
+pub struct Structures {
+	/// Structure starts, keyed by structure ID
+	#[serde(rename = "starts", alias = "Starts", default)]
+	pub starts: std::collections::HashMap<String, StructureStart>,
+}
+
 /// Toplevel compound element of a Minecraft chunk
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -230,6 +262,10 @@ pub struct Chunk {
 	/// is found in the [`Level`](LevelV0) compound instead.
 	#[serde(default)]
 	pub inhabited_time: Option<i64>,
+	/// Generated structure data (Minecraft 1.18+; older chunks store this in the
+	/// [`Level`](LevelV0) compound)
+	#[serde(default, rename = "structures")]
+	pub structures: Option<Structures>,
 	/// Version-specific chunk data
 	#[serde(flatten)]
 	pub chunk: ChunkVariant,

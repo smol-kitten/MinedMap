@@ -278,6 +278,10 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	let tiles = TileMipmapper::new(config, &overworld_regions).run()?;
 	MetadataWriter::new(config, &tiles).run()?;
 
+	// Bedrock structure data uses a different storage scheme and is not yet
+	// extracted, but still write an (empty) structures.json for the viewer.
+	super::write_structures(config, &overlays)?;
+
 	let overlay_dirs = config.overlay_output_dirs();
 	if !overlay_dirs.is_empty() {
 		let dir_refs: Vec<&Path> = overlay_dirs.iter().map(PathBuf::as_path).collect();
@@ -866,6 +870,7 @@ mod test {
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,
 			world_seed: None,
+			structures: false,
 			poi_markers: false,
 			poi_dir: input_dir.join("poi"),
 			region_dir: input_dir.join("region"),
@@ -878,6 +883,7 @@ mod test {
 			viewer_info_path: output_dir.join("info.json"),
 			viewer_entities_path: output_dir.join("entities.json"),
 			viewer_pois_path: output_dir.join("pois.json"),
+			viewer_structures_path: output_dir.join("structures.json"),
 			image_format: ImageFormat::Png,
 			sign_patterns: RegexSet::empty(),
 			sign_transforms: Vec::new(),

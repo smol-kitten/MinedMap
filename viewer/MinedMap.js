@@ -380,6 +380,42 @@ async function loadPois(groups) {
 	}
 }
 
+// Derives a stable color for a structure type
+function structureColor(type) {
+	let hash = 0;
+	for (let i = 0; i < type.length; i++)
+		hash = (hash * 31 + type.charCodeAt(i)) >>> 0;
+	return `hsl(${hash % 360}, 65%, 55%)`;
+}
+
+async function loadStructures(group) {
+	let data;
+	try {
+		const response = await fetch('data/structures.json', {cache: 'no-store'});
+		if (!response.ok)
+			throw new Error('Failed to fetch structures.json');
+		data = await response.json();
+	} catch (err) {
+		console.error('Failed to load structure data', err);
+		return;
+	}
+
+	for (const structure of data.structures || []) {
+		const [minX, minZ, maxX, maxZ] = structure.bb;
+		const color = structureColor(structure.type);
+		// Bounding box maxima are inclusive block coordinates, so extend by 1
+		L.rectangle([[-minZ, minX], [-(maxZ + 1), maxX + 1]], {
+			color,
+			weight: 1,
+			opacity: 0.8,
+			fillColor: color,
+			fillOpacity: 0.1,
+		})
+			.bindTooltip(structure.type.replace(/^minecraft:/, ''))
+			.addTo(group);
+	}
+}
+
 async function loadSigns(signLayer) {
 	const response = await fetch('data/entities.json', {cache: 'no-store'});
 	const res = await response.json();
@@ -571,6 +607,13 @@ window.createMap = function () {
 			if (ev.layer === gridLayer)
 				redrawGrid();
 		});
+
+		// Generated structure bounding boxes
+		if (features.structures) {
+			const structureGroup = L.layerGroup();
+			overlayMaps['Structures'] = structureGroup;
+			loadStructures(structureGroup);
+		}
 
 		// Point-of-interest marker layers
 		if (features.pois) {

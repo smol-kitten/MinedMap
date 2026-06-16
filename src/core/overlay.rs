@@ -76,6 +76,72 @@ pub fn is_built_block_entity(id: &str) -> bool {
 	BUILT_BLOCK_ENTITIES.contains(&name)
 }
 
+/// A generated structure's bounding box, for the structures viewer layer
+#[derive(Debug, Clone, Serialize)]
+pub struct Structure {
+	/// Structure type ID (for example `minecraft:village`)
+	#[serde(rename = "type")]
+	pub structure_type: String,
+	/// Bounding box in block coordinates `[minX, minZ, maxX, maxZ]`
+	pub bb: [i32; 4],
+}
+
+/// Extends a bounding box accumulator with an NBT `[minX, minY, minZ, maxX, maxY, maxZ]`
+fn union_bb(acc: &mut Option<[i32; 4]>, arr: &fastnbt::IntArray) {
+	if arr.len() < 6 {
+		return;
+	}
+	let (min_x, min_z, max_x, max_z) = (arr[0], arr[2], arr[3], arr[5]);
+	match acc {
+		None => *acc = Some([min_x, min_z, max_x, max_z]),
+		Some(bb) => {
+			bb[0] = bb[0].min(min_x);
+			bb[1] = bb[1].min(min_z);
+			bb[2] = bb[2].max(max_x);
+			bb[3] = bb[3].max(max_z);
+		}
+	}
+}
+
+/// Computes a structure's full bounding box from its start and child pieces
+fn structure_bb(start: &de::StructureStart) -> Option<[i32; 4]> {
+	let mut acc = None;
+	if let Some(bb) = &start.bb {
+		union_bb(&mut acc, bb);
+	}
+	for child in &start.children {
+		if let Some(bb) = &child.bb {
+			union_bb(&mut acc, bb);
+		}
+	}
+	acc
+}
+
+/// Extracts the generated structures starting in a Java [chunk](de::Chunk)
+pub fn java_chunk_structures(chunk: &de::Chunk) -> Vec<Structure> {
+	let structures = match &chunk.chunk {
+		de::ChunkVariant::V1_18 { .. } => chunk.structures.as_ref(),
+		de::ChunkVariant::V0 { level } => level.structures.as_ref(),
+	};
+	let Some(structures) = structures else {
+		return Vec::new();
+	};
+
+	let mut result = Vec::new();
+	for (name, start) in &structures.starts {
+		if start.id.as_deref() == Some("INVALID") {
+			continue;
+		}
+		if let Some(bb) = structure_bb(start) {
+			result.push(Structure {
+				structure_type: name.clone(),
+				bb,
+			});
+		}
+	}
+	result
+}
+
 /// Per-chunk overlay information
 ///
 /// Collected while a chunk is visited; merged into a [DimensionOverlay]
@@ -133,6 +199,8 @@ pub struct DimensionOverlay {
 	pub slime: Vec<(i32, i32)>,
 	/// `[chunkX, chunkZ, score]` for chunks with a "built" score > 0
 	pub built: Vec<(i32, i32, u32)>,
+	/// Generated structures (written to a separate `structures.json`)
+	pub structures: Vec<Structure>,
 }
 
 impl DimensionOverlay {
@@ -170,6 +238,7 @@ impl DimensionOverlay {
 		self.end_portal.append(&mut other.end_portal);
 		self.slime.append(&mut other.slime);
 		self.built.append(&mut other.built);
+		self.structures.append(&mut other.structures);
 	}
 
 	/// Sorts all entries by chunk coordinates for deterministic output
@@ -181,6 +250,8 @@ impl DimensionOverlay {
 		self.end_portal.sort_unstable();
 		self.slime.sort_unstable();
 		self.built.sort_unstable_by_key(|&(x, z, _)| (x, z));
+		self.structures
+			.sort_by(|a, b| (a.bb, &a.structure_type).cmp(&(b.bb, &b.structure_type)));
 	}
 }
 
@@ -245,6 +316,18 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
 	fs::create_with_tmpfile(path, |file| {
 		serde_json::to_writer(file, value).context("Failed to serialize overlay data")
 	})
+}
+
+/// Serialization shape of `structures.json`
+#[derive(Serialize)]
+struct StructuresOutput<'a> {
+	/// Generated structures
+	structures: &'a [Structure],
+}
+
+/// Writes the `structures.json` file
+pub fn write_structures(path: &Path, structures: &[Structure]) -> Result<()> {
+	write_json(path, &StructuresOutput { structures }).context("Failed to write structures.json")
 }
 
 /// Serialization shape of `inhabited_heatmap.json`
@@ -347,6 +430,79 @@ fn count_built(entities: &[de::BlockEntity]) -> u32 {
 #[cfg(test)]
 mod test {
 	use super::*;
+
+	#[test]
+	fn test_java_chunk_structures() {
+		use serde::Serialize;
+
+		#[derive(Serialize)]
+		struct Piece {
+			#[serde(rename = "BB")]
+			bb: fastnbt::IntArray,
+		}
+		#[derive(Serialize)]
+		struct Start {
+			#[serde(rename = "BB")]
+			bb: fastnbt::IntArray,
+			id: String,
+			#[serde(rename = "Children")]
+			children: Vec<Piece>,
+		}
+		#[derive(Serialize)]
+		struct Invalid {
+			id: String,
+		}
+		#[derive(Serialize)]
+		struct Starts {
+			#[serde(rename = "minecraft:village")]
+			village: Start,
+			#[serde(rename = "minecraft:mineshaft")]
+			mineshaft: Invalid,
+		}
+		#[derive(Serialize)]
+		struct StructuresNbt {
+			starts: Starts,
+		}
+		#[derive(Serialize)]
+		struct Chunk {
+			#[serde(rename = "DataVersion")]
+			data_version: i32,
+			structures: StructuresNbt,
+			sections: Vec<i32>,
+			block_entities: Vec<i32>,
+		}
+
+		let chunk = Chunk {
+			data_version: 3000,
+			structures: StructuresNbt {
+				starts: Starts {
+					village: Start {
+						bb: fastnbt::IntArray::new(vec![0, 60, 0, 16, 70, 16]),
+						id: "minecraft:village".to_string(),
+						// A child piece extends the bounding box to the east
+						children: vec![Piece {
+							bb: fastnbt::IntArray::new(vec![16, 60, 0, 40, 70, 24]),
+						}],
+					},
+					mineshaft: Invalid {
+						id: "INVALID".to_string(),
+					},
+				},
+			},
+			sections: Vec::new(),
+			block_entities: Vec::new(),
+		};
+
+		let bytes = fastnbt::to_bytes(&chunk).unwrap();
+		let decoded: de::Chunk = fastnbt::from_bytes(&bytes).unwrap();
+		let structures = java_chunk_structures(&decoded);
+
+		// The INVALID mineshaft is skipped; the village BB is the union of the
+		// start and its child piece ([minX, minZ, maxX, maxZ]).
+		assert_eq!(structures.len(), 1);
+		assert_eq!(structures[0].structure_type, "minecraft:village");
+		assert_eq!(structures[0].bb, [0, 0, 40, 24]);
+	}
 
 	#[test]
 	fn test_note_block() {

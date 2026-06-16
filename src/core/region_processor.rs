@@ -170,6 +170,8 @@ struct SingleRegionProcessor<'a> {
 	textured_needed: bool,
 	/// True if the cave tile needs to be updated
 	cave_needed: bool,
+	/// True if generated structures should be collected
+	structures_needed: bool,
 	/// Texture atlas for the textured layer, if enabled
 	texture_atlas: Option<&'a texture::TextureAtlas>,
 	/// How to render unrecognized blocks
@@ -228,6 +230,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			overlays_needed: processor.config.wants_overlays(),
 			textured_needed,
 			cave_needed,
+			structures_needed: processor.config.structures,
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
 			world_seed: processor.config.world_seed,
@@ -364,6 +367,12 @@ impl<'a> SingleRegionProcessor<'a> {
 			data.overlay.add(abs_x, abs_z, &info);
 		}
 
+		if self.structures_needed {
+			data.overlay
+				.structures
+				.extend(overlay::java_chunk_structures(&chunk_data));
+		}
+
 		if !self.output_needed
 			&& !self.lightmap_needed
 			&& !self.entities_needed
@@ -470,6 +479,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.overlays_needed
 			&& !self.textured_needed
 			&& !self.cave_needed
+			&& !self.structures_needed
 		{
 			debug!(
 				"Skipping unchanged region r.{}.{}.mca",
