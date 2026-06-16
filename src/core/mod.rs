@@ -18,6 +18,7 @@ mod tile_collector;
 mod tile_merger;
 mod tile_mipmapper;
 mod tile_renderer;
+mod world_stats;
 
 use std::{
 	path::PathBuf,
@@ -147,6 +148,16 @@ pub struct Args {
 	/// searching the input directory and its parent for the default caches.
 	#[arg(long, value_name = "FILE")]
 	pub usercache: Vec<PathBuf>,
+	/// Emit world-level statistics to the given directory
+	///
+	/// Writes `world.json` into the directory, summarizing the world: its seed,
+	/// per-dimension region and inhabited-chunk counts, the total number of
+	/// blocks the players have mined and placed, and the on-disk size of the
+	/// world. Works for both editions (Bedrock omits the seed and player-derived
+	/// block totals). The file is written atomically and its absolute path is
+	/// printed to stdout.
+	#[arg(long, value_name = "DIR")]
+	pub emit_world_stats: Option<PathBuf>,
 	/// Generate viewer overlay layers from the per-chunk overlay data
 	///
 	/// Writes the overlay data into the output directory and exposes it in the
@@ -316,6 +327,15 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 		write_json(&config.viewer_mobs_path, &mobs)?;
 	}
 
+	// World statistics need the inhabited-chunk data, so compute them before
+	// write_overlays consumes the collected overlay data.
+	let world_stats = config.emit_world_stats.as_ref().map(|dir| {
+		(
+			dir.clone(),
+			world_stats::collect_java(config, &combined_overlays),
+		)
+	});
+
 	write_overlays(config, combined_overlays)?;
 
 	// Consolidated derived data for downstream tools: --emit-overlays <dir>
@@ -337,6 +357,11 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 			&config.usercache_files,
 		);
 		write_json_emit(&dir.join("players.json"), &players)?;
+	}
+
+	if let Some((dir, stats)) = world_stats {
+		crate::io::fs::create_dir_all(&dir)?;
+		write_json_emit(&world_stats::output_path(&dir), &stats)?;
 	}
 
 	Ok(())

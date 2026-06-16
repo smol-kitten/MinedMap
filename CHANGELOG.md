@@ -4,6 +4,13 @@
 
 ### Added
 
+- Added `--emit-world-stats` option
+
+  Writes a `world.json` summarizing the world — seed, per-dimension region and
+  inhabited-chunk counts, total blocks mined and placed by players, and the
+  on-disk world size — for both editions (Bedrock omits the seed and
+  player-derived totals).
+
 - Added `--emit-player-data` option
 
   Writes a `players.json` with per-player position, dimension, rotation, respawn

@@ -311,6 +311,33 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 		super::write_json(&config.viewer_structures_path, &structures)?;
 	}
 
+	// World statistics need the inhabited data, so compute them before the
+	// overlay data is consumed by write(). Bedrock has no InhabitedTime and no
+	// Java-style player stats, so those counts are zero.
+	if let Some(dir) = &config.emit_world_stats {
+		let mut regions = BTreeMap::new();
+		let mut inhabited_chunks = BTreeMap::new();
+		for dim in [Dimension::Overworld, Dimension::Nether, Dimension::End] {
+			regions.insert(
+				dim.key(),
+				index.keys().filter(|(d, _, _)| *d == dim).count(),
+			);
+		}
+		for dim in Dimension::ALL {
+			inhabited_chunks.insert(dim.key(), overlays.dimension(dim).inhabited.len());
+		}
+		let stats = super::world_stats::WorldStats {
+			seed: None,
+			regions,
+			inhabited_chunks,
+			blocks_mined: 0,
+			blocks_placed: 0,
+			size_bytes: super::world_stats::dir_size(&config.input_dir),
+		};
+		fs::create_dir_all(dir)?;
+		super::write_json_emit(&super::world_stats::output_path(dir), &stats)?;
+	}
+
 	let overlay_dirs = config.overlay_output_dirs();
 	if !overlay_dirs.is_empty() {
 		let dir_refs: Vec<&Path> = overlay_dirs.iter().map(PathBuf::as_path).collect();
@@ -970,6 +997,7 @@ mod test {
 			player_data_dir: None,
 			player_stats_dir: None,
 			usercache_files: Vec::new(),
+			emit_world_stats: Some(overlay_dir.to_path_buf()),
 			overlay_layers: true,
 			height_layer: true,
 			biome_layer: true,
@@ -1150,6 +1178,15 @@ mod test {
 			serde_json::from_slice(&std::fs::read(overlay_dir.join("structures.json")).unwrap())
 				.unwrap();
 		assert_eq!(emit_structures["overworld"], structures["overworld"]);
+
+		// --emit-world-stats must produce a world.json summarizing the world
+		let world: serde_json::Value =
+			serde_json::from_slice(&std::fs::read(overlay_dir.join("world.json")).unwrap())
+				.unwrap();
+		assert!(world["regions"]["overworld"].as_u64().unwrap() >= 1);
+		assert!(world["size_bytes"].as_u64().unwrap() > 0);
+		// Bedrock has no Java-style player stats
+		assert_eq!(world["blocks_mined"], 0);
 
 		let _ = std::fs::remove_dir_all(&base);
 	}
