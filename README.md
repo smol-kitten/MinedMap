@@ -216,6 +216,17 @@ Player UUIDs are taken from the `playerdata` file names. Bedrock Edition player
 data is not yet supported; passing the option for a Bedrock world logs a warning
 and skips the file.
 
+### World statistics
+
+Passing `--emit-world-stats <dir>` writes a single `world.json` into `<dir>`
+summarizing the world: its seed, the number of region files and inhabited chunks
+per dimension, the total number of blocks the players have mined and placed, and
+the total on-disk size of the world directory. The file is written atomically
+and its absolute path is printed to stdout. It works for both editions; Bedrock
+Edition omits the seed and the player-derived block totals (it has no
+`InhabitedTime` and no Java-style player statistics). The schema is documented
+under [Output data files](#output-data-files).
+
 When the relevant files are not laid out in the standard way (for example when
 the input is a world directory but the caches live elsewhere), the locations can
 be overridden:
@@ -514,6 +525,25 @@ second).
 
 `blocks_placed` is the sum of the `minecraft:used` stat category, which
 approximates placements as Minecraft has no dedicated block-placement counter.
+
+### `world.json` — world statistics (`--emit-world-stats`)
+
+A single object summarizing the world. `seed` is omitted when it cannot be
+determined (always for Bedrock Edition). `regions` and `inhabited_chunks` are
+keyed by dimension name; `blocks_mined` / `blocks_placed` are summed over all
+players (always `0` for Bedrock); `size_bytes` is the total size of the input
+world directory.
+
+```jsonc
+{
+  "seed": 1234567890123456789,
+  "regions": { "overworld": 264, "nether": 12, "end": 3 },
+  "inhabited_chunks": { "overworld": 8123, "nether": 210, "end": 40 },
+  "blocks_mined": 154233,
+  "blocks_placed": 98120,
+  "size_bytes": 734003200
+}
+```
 
 ## Installation
 

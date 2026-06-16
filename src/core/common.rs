@@ -282,6 +282,8 @@ pub struct Config {
 	pub player_stats_dir: Option<PathBuf>,
 	/// Explicit player name cache files (overriding auto-detection)
 	pub usercache_files: Vec<PathBuf>,
+	/// Directory to emit world-level statistics to, if requested
+	pub emit_world_stats: Option<PathBuf>,
 	/// Whether to generate viewer overlay layers from the overlay data
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
@@ -431,6 +433,7 @@ impl Config {
 			player_data_dir: args.player_data_dir.clone(),
 			player_stats_dir: args.stats_dir.clone(),
 			usercache_files: args.usercache.clone(),
+			emit_world_stats: args.emit_world_stats.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
@@ -634,8 +637,10 @@ impl Config {
 	}
 
 	/// Returns whether per-chunk overlay data should be collected
+	///
+	/// World statistics need the inhabited-chunk data from the overlay pass.
 	pub fn wants_overlays(&self) -> bool {
-		self.emit_overlays.is_some() || self.overlay_layers
+		self.emit_overlays.is_some() || self.overlay_layers || self.emit_world_stats.is_some()
 	}
 
 	/// Returns whether generated structure bounding boxes should be collected
