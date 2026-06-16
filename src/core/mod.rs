@@ -112,8 +112,8 @@ pub struct Args {
 	pub end: bool,
 	/// Emit derived per-chunk and marker data to the given directory
 	///
-	/// Writes a consolidated set of JSON files into <DIR> for consumption by
-	/// downstream tools: `inhabited_heatmap.json`, `block_features.json`,
+	/// Writes a consolidated set of JSON files into the directory for consumption
+	/// by downstream tools: `inhabited_heatmap.json`, `block_features.json`,
 	/// `structures.json`, `pois.json` and `mobs.json` (the latter three are
 	/// dimension-keyed; Bedrock Edition emits only the first three). All files
 	/// are written atomically and their absolute paths are printed to stdout.
@@ -122,7 +122,7 @@ pub struct Args {
 	pub emit_overlays: Option<PathBuf>,
 	/// Emit per-player data to the given directory (Java Edition)
 	///
-	/// Writes `players.json` into <DIR>, containing each player's position,
+	/// Writes `players.json` into the directory, containing each player's position,
 	/// dimension, rotation, respawn point, XP, health, food, inventory, ender
 	/// chest, and (from `stats/<uuid>.json`) accumulated statistics. Player names
 	/// are resolved from `usercache.json` / `usernamecache.json` in the input
