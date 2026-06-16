@@ -211,6 +211,9 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - test
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
@@ -227,7 +230,7 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/neocturne/minedmap/minedmap
+            ghcr.io/${{ github.repository_owner }}/minedmap/minedmap
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
@@ -260,13 +263,16 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - test
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: |
-            ghcr.io/neocturne/minedmap/viewer
+            ghcr.io/${{ github.repository_owner }}/minedmap/viewer
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
