@@ -2,8 +2,11 @@
 //!
 //! Java Edition stores POIs — village meeting points, villager beds and job
 //! sites, nether portals, lodestones, … — in `poi/*.mca` files using the same
-//! Anvil region format as block data. This module reads those files and writes
-//! a `pois.json` consumed by the viewer to display marker layers.
+//! Anvil region format as block data. This module reads those files for one
+//! dimension and returns the categorized POI positions as [PoiData]. The caller
+//! ([crate::core]) merges the per-dimension results into the dimension-keyed
+//! `pois.json` consumed by the viewer. The output schema is documented in the
+//! README ("Output data files").
 
 use std::{ffi::OsStr, path::Path};
 

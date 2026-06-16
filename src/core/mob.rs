@@ -1,9 +1,11 @@
 //! Collection of mob (entity) markers for the viewer
 //!
 //! Java Edition 1.17+ stores entities in `entities/*.mca` files using the same
-//! Anvil region format as block data. This module reads those files and writes a
-//! `mobs.json` consumed by the viewer to display markers for hostile and passive
-//! mobs.
+//! Anvil region format as block data. This module reads those files for one
+//! dimension and returns the hostile/passive mob positions as [MobData]. The
+//! caller ([crate::core]) merges the per-dimension results into the
+//! dimension-keyed `mobs.json` consumed by the viewer. The output schema is
+//! documented in the README ("Output data files").
 
 use std::{ffi::OsStr, path::Path};
 
