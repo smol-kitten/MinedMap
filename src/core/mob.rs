@@ -1,19 +1,20 @@
 //! Collection of mob (entity) markers for the viewer
 //!
 //! Java Edition 1.17+ stores entities in `entities/*.mca` files using the same
-//! Anvil region format as block data. This module reads those files and writes a
-//! `mobs.json` consumed by the viewer to display markers for hostile and passive
-//! mobs.
+//! Anvil region format as block data. This module reads those files for one
+//! dimension and returns the hostile/passive mob positions as [MobData]. The
+//! caller ([crate::core]) merges the per-dimension results into the
+//! dimension-keyed `mobs.json` consumed by the viewer. The output schema is
+//! documented in the README ("Output data files").
 
 use std::{ffi::OsStr, path::Path};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::warn;
 
 use super::common::*;
-use crate::io::fs;
 
 /// A single entity record in an entity chunk
 #[derive(Debug, Deserialize)]
@@ -136,7 +137,7 @@ fn category(id: &str) -> Option<&'static str> {
 
 /// Collected mob marker positions by category (block coordinates)
 #[derive(Debug, Default, Serialize)]
-struct MobData {
+pub struct MobData {
 	/// Hostile mobs
 	hostile: Vec<(i32, i32)>,
 	/// Passive and neutral mobs
@@ -198,53 +199,33 @@ fn collect_file(path: &Path) -> Result<MobData> {
 	Ok(data)
 }
 
-/// Collects mob markers and writes the viewer `mobs.json` file
-pub struct MobCollector<'a> {
-	/// Common MinedMap configuration from command line
-	config: &'a Config,
-}
-
-impl<'a> MobCollector<'a> {
-	/// Creates a new [MobCollector]
-	pub fn new(config: &'a Config) -> Self {
-		MobCollector { config }
-	}
-
-	/// Reads all entity region files and writes `mobs.json`
-	pub fn run(self) -> Result<()> {
-		info!("Collecting mobs...");
-
-		let mut files = Vec::new();
-		if let Ok(dir) = self.config.entity_region_dir.read_dir() {
-			for entry in dir.filter_map(Result::ok) {
-				if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-					&& is_region_filename(&entry.file_name())
-				{
-					files.push(entry.path());
-				}
+/// Collects mob markers from the entity region files of one dimension
+pub fn collect(config: &Config) -> MobData {
+	let mut files = Vec::new();
+	if let Ok(dir) = config.entity_region_dir.read_dir() {
+		for entry in dir.filter_map(Result::ok) {
+			if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
+				&& is_region_filename(&entry.file_name())
+			{
+				files.push(entry.path());
 			}
 		}
-
-		let mut data = files
-			.par_iter()
-			.map(|path| {
-				collect_file(path).unwrap_or_else(|err| {
-					warn!("Failed to read entity file {}: {:?}", path.display(), err);
-					MobData::default()
-				})
-			})
-			.reduce(MobData::default, |mut a, b| {
-				a.merge(b);
-				a
-			});
-		data.finish();
-
-		fs::create_with_tmpfile(&self.config.viewer_mobs_path, |file| {
-			serde_json::to_writer(file, &data).context("Failed to write mobs.json")
-		})?;
-
-		Ok(())
 	}
+
+	let mut data = files
+		.par_iter()
+		.map(|path| {
+			collect_file(path).unwrap_or_else(|err| {
+				warn!("Failed to read entity file {}: {:?}", path.display(), err);
+				MobData::default()
+			})
+		})
+		.reduce(MobData::default, |mut a, b| {
+			a.merge(b);
+			a
+		});
+	data.finish();
+	data
 }
 
 #[cfg(test)]

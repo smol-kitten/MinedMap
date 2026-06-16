@@ -117,6 +117,15 @@ the viewer shows a dimension switcher in the top-right corner when more than one
 dimension is available. All map layers (illumination, topography, biomes, caves, contours,
 textures) are produced per dimension; the marker and overlay-data layers
 (signs, POIs, mobs, structures, …) are collected for the overworld only.
+(Java Edition) additionally renders those dimensions. Their tiles are written
+under `nether/` and `end/` subdirectories of the output, and the viewer shows a
+dimension switcher in the top-right corner when more than one dimension is
+available. All map layers (illumination, topography, biomes, caves, contours,
+textures) are produced per dimension, as are the marker and overlay-data layers
+(signs, POIs, mobs, structures, …): the markers shown follow the dimension
+selected in the viewer. Each marker data file (`pois.json`, `mobs.json`,
+`structures.json`, `entities.json`) and the overlay-data files are keyed by
+dimension name (`overworld`, `nether`, `end`).
 
 ### Bedrock Edition
 
@@ -266,6 +275,146 @@ map. The `--unknown-blocks` option changes this:
 When combined with `--block-textures` pointed at a modpack's resource pack,
 unknown blocks that have a matching texture in the pack are drawn with that
 texture; the rest fall back to the color chosen by `--unknown-blocks`.
+
+## Output data files
+
+In addition to the map tiles, MinedMap writes a set of JSON files into the
+output (viewer data) directory that downstream tools can consume directly. This
+section documents their location and schema. All files are written atomically
+(via a temporary file that is renamed into place), so a reader will always see
+either the previous or the complete new version, never a partial write.
+
+### Coordinate and dimension conventions
+
+* **Block coordinates** are the in-game world coordinates. **Chunk coordinates**
+  are block coordinates divided by 16 (`block >> 4`); a chunk spans 16×16 blocks.
+* The `y`/vertical axis is omitted from marker data — markers are placed by their
+  horizontal `x`/`z` position only (signs additionally keep `y`).
+* The marker and overlay-data files are **keyed by dimension name** at the top
+  level: `overworld`, `nether` and `end`. Only dimensions that were actually
+  rendered (see `--nether` / `--end`) and for which the relevant feature was
+  enabled are guaranteed to be present. **Treat a missing dimension key as an
+  empty result.** (`structures.json` and the overlay-data files always include
+  all three keys; `pois.json`, `mobs.json` and `entities.json` only include keys
+  for rendered dimensions.)
+
+### `info.json`
+
+Always written. Viewer metadata describing which layers exist, the rendered
+dimensions, the world spawn and the tile image format:
+
+```jsonc
+{
+  "mipmaps": [ /* overworld mipmap levels, kept for backwards compatibility */ ],
+  "dimensions": {
+    "overworld": { "mipmaps": [ { "bounds": { "minX": -1, "maxX": 2,
+                                               "minZ": -1, "maxZ": 1 },
+                                  "regions": { /* z: [x, …] */ } }, … ] },
+    "nether": { "mipmaps": [ … ] }
+  },
+  "spawn": { "x": 0, "z": 0 },          // block coordinates
+  "features": {                          // which optional layers were generated
+    "signs": true, "height": false, "biome": false, "cave": false,
+    "mobspawn": false, "contour": false, "pois": false, "mobs": false,
+    "structures": false, "overlays": false, "slime": false, "textured": false
+  },
+  "tile_extension": "png"                // "png" or "webp"
+}
+```
+
+Each mipmap level lists the populated tiles as `regions` (a map from tile `z` to
+an array of tile `x` values) along with their `bounds`. Tiles are stored at
+`<dimension-prefix>tiles/<mipmap>/<x>/<z>.<tile_extension>`, where the dimension
+prefix is empty for the overworld and `nether/` or `end/` otherwise.
+
+### `entities.json` — signs (`--sign-prefix` / `--sign-filter`)
+
+Sign block entities matching the configured sign filters, grouped by dimension:
+
+```jsonc
+{
+  "overworld": {
+    "signs": [
+      {
+        "x": 10, "y": 64, "z": -20,        // block coordinates
+        "type": "sign",
+        "kind": "sign",                     // "sign", "wall_sign" or "hanging_sign"
+        "material": "oak",                  // wood/material name (optional)
+        "front_text": { "messages": ["\"line 1\"", "\"\"", "\"\"", "\"\""] },
+        "back_text":  { "messages": [ … ] } // present when non-empty
+      }
+    ]
+  }
+}
+```
+
+Each `messages` entry is a JSON-text component (the raw Minecraft sign text), so
+a line may itself be a JSON string/object; empty lines are `"\"\""`. Sign
+filtering and `--sign-transform` rewrites are already applied. Bedrock Edition
+does not collect signs (the `overworld.signs` list is empty).
+
+### `pois.json` — points of interest (`--poi-markers`)
+
+Point-of-interest positions grouped by dimension, then by category. Each entry
+is a `[blockX, blockZ]` pair, sorted and deduplicated:
+
+```jsonc
+{
+  "overworld": {
+    "village":   [[x, z], …],   // meeting points
+    "home":      [[x, z], …],   // villager beds
+    "jobsite":   [[x, z], …],   // villager job-site blocks
+    "portal":    [[x, z], …],   // nether portals
+    "lodestone": [[x, z], …],
+    "other":     [[x, z], …]    // any other recognized POI
+  }
+}
+```
+
+### `mobs.json` — mob markers (`--mob-markers`)
+
+Mob positions grouped by dimension, then by category, as `[blockX, blockZ]`
+pairs (the entity position floored to integer block coordinates):
+
+```jsonc
+{
+  "overworld": {
+    "hostile": [[x, z], …],     // zombies, skeletons, creepers, …
+    "passive": [[x, z], …]      // animals, villagers, golems, …
+  }
+}
+```
+
+Non-mob entities (items, projectiles, experience orbs, …) are ignored.
+
+### `structures.json` — generated structures (`--structures`)
+
+Generated-structure bounding boxes grouped by dimension. Each entry is an
+object with the structure `type` and its bounding box `bb` as
+`[minX, minZ, maxX, maxZ]` in block coordinates; the maxima are **inclusive**
+(the box covers blocks up to and including `maxX`/`maxZ`):
+
+```jsonc
+{
+  "overworld": [
+    { "type": "minecraft:village",  "bb": [10, 20, 40, 60] },
+    { "type": "minecraft:mineshaft", "bb": [-80, -16, -8, 40] }
+  ],
+  "nether": [ { "type": "minecraft:fortress", "bb": [ … ] } ],
+  "end": []
+}
+```
+
+The box is the union of all of a structure's pieces, so it covers the full
+footprint. For Bedrock Edition only village bounds are available, surfaced as
+`minecraft:village`.
+
+### Overlay data — `inhabited_heatmap.json` / `block_features.json`
+
+Written into the `overlays/` subdirectory when `--overlay-layers` is passed
+(and/or into the directory given to `--emit-overlays`). These use **chunk**
+coordinates and are documented in the [Overlay data](#overlay-data) section
+above.
 
 ## Installation
 

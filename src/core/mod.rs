@@ -237,9 +237,12 @@ fn generate(args: &Args, rt: &Runtime) -> Result<()> {
 /// Runs all MinedMap generation steps for a Java Edition world
 fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	use overlay::Dimension;
+	use std::collections::BTreeMap;
 
 	let mut combined_overlays = overlay::OverlayData::default();
 	let mut dimension_tiles: Vec<(Dimension, Vec<TileCoordMap>)> = Vec::new();
+	let mut pois: BTreeMap<&'static str, poi::PoiData> = BTreeMap::new();
+	let mut mobs: BTreeMap<&'static str, mob::MobData> = BTreeMap::new();
 
 	for (dimension, region_dir) in config.dimensions_to_render() {
 		let dim_config = config.for_dimension(dimension, region_dir);
@@ -247,15 +250,21 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 		let (regions, overlays) = RegionProcessor::new(&dim_config).run()?;
 		TileRenderer::new(&dim_config, rt, &regions).run()?;
 		let tiles = TileMipmapper::new(&dim_config, &regions).run()?;
-		// Signs are only collected for the overworld.
-		if dimension == Dimension::Overworld {
-			EntityCollector::new(&dim_config, &regions).run()?;
-		}
+		// Signs are collected per dimension (the metadata writer reads each
+		// dimension's processed entity data).
+		EntityCollector::new(&dim_config, &regions).run()?;
 
 		// The region processor accumulates overlay data in the overworld field;
 		// route it into the dimension that was actually processed.
 		let dim_overlay = overlays.overworld;
 		*combined_overlays.dimension_mut(dimension) = dim_overlay;
+
+		if config.poi_markers {
+			pois.insert(dimension.key(), poi::collect(&dim_config));
+		}
+		if config.mob_markers {
+			mobs.insert(dimension.key(), mob::collect(&dim_config));
+		}
 
 		dimension_tiles.push((dimension, tiles));
 	}
@@ -266,24 +275,35 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 	write_overlays(config, combined_overlays)?;
 
 	if config.poi_markers {
-		poi::PoiCollector::new(config).run()?;
+		write_json(&config.viewer_pois_path, &pois)?;
 	}
-
 	if config.mob_markers {
-		mob::MobCollector::new(config).run()?;
+		write_json(&config.viewer_mobs_path, &mobs)?;
 	}
 
 	Ok(())
 }
 
-/// Writes collected structure bounding boxes to `structures.json`
+/// Writes a value as JSON to a viewer output file
+fn write_json<T: serde::Serialize>(path: &std::path::Path, value: &T) -> Result<()> {
+	crate::io::fs::create_with_tmpfile(path, |file| {
+		serde_json::to_writer(file, value).context("Failed to write viewer JSON")
+	})
+}
+
+/// Writes collected per-dimension structure bounding boxes to `structures.json`
 fn write_structures(config: &Config, overlays: &overlay::OverlayData) -> Result<()> {
 	if !config.structures {
 		return Ok(());
 	}
-	let mut structures = overlays.overworld.structures.clone();
-	structures.sort_by(|a, b| (a.bb, &a.structure_type).cmp(&(b.bb, &b.structure_type)));
-	overlay::write_structures(&config.viewer_structures_path, &structures)
+	use overlay::Dimension;
+	let mut by_dimension = std::collections::BTreeMap::new();
+	for dim in Dimension::ALL {
+		let mut structures = overlays.dimension(dim).structures.clone();
+		structures.sort_by(|a, b| (a.bb, &a.structure_type).cmp(&(b.bb, &b.structure_type)));
+		by_dimension.insert(dim.key(), structures);
+	}
+	write_json(&config.viewer_structures_path, &by_dimension)
 }
 
 /// Writes collected overlay data to all configured destinations
