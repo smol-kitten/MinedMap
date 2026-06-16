@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added `--mob-markers` option
+
+  Reads the world's entity data and shows hostile and passive mobs as toggleable
+  marker layers in the viewer (Java Edition).
+
 - Added `--contour-layer` option
 
   Generates a contour (elevation lines) map layer drawing isolines every 8

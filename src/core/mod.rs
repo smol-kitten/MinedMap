@@ -7,6 +7,7 @@ mod flat;
 mod heightmap;
 mod java_random;
 mod metadata_writer;
+mod mob;
 mod overlay;
 mod poi;
 mod region_group;
@@ -155,6 +156,12 @@ pub struct Args {
 	/// sites, nether portals, lodestones) and writes markers shown in the viewer.
 	#[arg(long)]
 	pub poi_markers: bool,
+	/// Generate viewer marker layers for mobs (Java Edition)
+	///
+	/// Reads the world's entity data and writes markers for hostile and passive
+	/// mobs, shown in the viewer.
+	#[arg(long)]
+	pub mob_markers: bool,
 	/// Generate a high-resolution textured map layer from a resource pack
 	///
 	/// Samples the top-face block textures from the given resource pack
@@ -228,6 +235,10 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 
 	if config.poi_markers {
 		poi::PoiCollector::new(config).run()?;
+	}
+
+	if config.mob_markers {
+		mob::MobCollector::new(config).run()?;
 	}
 
 	Ok(())
