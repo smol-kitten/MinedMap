@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `--nether` and `--end` options
+
+  Render the nether and/or end dimensions in addition to the overworld (Java
+  Edition). Their tiles are written under `nether/` and `end/` subdirectories,
+  and the viewer gains a dimension switcher.
+
 - Added `--mob-markers` option
 
   Reads the world's entity data and shows hostile and passive mobs as toggleable

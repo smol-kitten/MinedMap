@@ -108,6 +108,16 @@ of single quotes (`'`), and all backslashes in the arguments must be escaped
 by doubling them. This can make regular expressions somewhat difficult to
 write and to read.
 
+### Nether and End
+
+By default only the overworld is rendered. Passing `--nether` and/or `--end`
+(Java Edition) additionally renders those dimensions. Their tiles are written
+under `nether/` and `end/` subdirectories of the output, and the viewer shows a
+dimension switcher in the top-right corner when more than one dimension is
+available. All map layers (illumination, topography, biomes, caves, contours,
+textures) are produced per dimension; the marker and overlay-data layers
+(signs, POIs, mobs, structures, …) are collected for the overworld only.
+
 ### Bedrock Edition
 
 In addition to Java Edition worlds, MinedMap can render Bedrock Edition worlds,

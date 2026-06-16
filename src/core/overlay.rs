@@ -35,6 +35,15 @@ pub enum Dimension {
 impl Dimension {
 	/// All dimensions in output order
 	pub const ALL: [Dimension; 3] = [Dimension::Overworld, Dimension::Nether, Dimension::End];
+
+	/// Returns the JSON/output key for the dimension
+	pub fn key(self) -> &'static str {
+		match self {
+			Dimension::Overworld => "overworld",
+			Dimension::Nether => "nether",
+			Dimension::End => "end",
+		}
+	}
 }
 
 /// Block entity IDs counted towards the "built" score
