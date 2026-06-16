@@ -338,11 +338,13 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 /// structures.
 fn collect_villages(db: &mut BedrockDb) -> Vec<overlay::Structure> {
 	let mut keys = Vec::new();
-	let _ = db.for_each_key(|key| {
+	if let Err(err) = db.for_each_key(|key| {
 		if key.starts_with(b"VILLAGE_") && key.ends_with(b"_INFO") {
 			keys.push(key.to_vec());
 		}
-	});
+	}) {
+		warn!("Failed to scan LevelDB keys for villages: {err:?}");
+	}
 
 	let mut result = Vec::new();
 	for key in keys {

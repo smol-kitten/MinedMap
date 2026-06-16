@@ -133,10 +133,17 @@
 - Hardened Bedrock subchunk decoding against malformed data (a corrupt palette
   bit width could previously cause a panic).
 
+- Compare generated files block-wise instead of byte-by-byte when deciding
+  whether an incremental update is needed, speeding up re-runs over large
+  outputs.
+
 ### Fixed
 
 - Avoided an unnecessary per-block string allocation during map generation when
   the textured layer is not in use.
+
+- Capped pre-allocations and reported previously-swallowed errors in the Bedrock
+  NBT/LevelDB readers, hardening them against malformed input.
 
 ## [2.8.0] - 2026-05-29
 
