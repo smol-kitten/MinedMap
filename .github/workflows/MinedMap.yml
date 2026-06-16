@@ -8,6 +8,9 @@ on:
   pull_request:
     branches:
       - 'main'
+  schedule:
+    # Nightly build at 04:00 UTC
+    - cron: '0 4 * * *'
   workflow_dispatch: {}
 
 env:
@@ -149,6 +152,60 @@ jobs:
         with:
           name: 'MinedMap-${{ steps.tag.outputs.tag }}-${{ matrix.target }}'
           path: 'target/pkg'
+
+  # Publishes a rolling "nightly" prerelease with the cross-platform binaries
+  # (Linux, Windows, macOS) and the viewer archive. Runs on pushes to main and
+  # on the nightly schedule; skipped for pull requests and version tag builds
+  # (which are handled as regular releases).
+  release-nightly:
+    runs-on: ubuntu-latest
+    needs:
+      - build
+      - viewer
+      - test
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: write
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@v4'
+
+      - name: 'Download build artifacts'
+        uses: 'actions/download-artifact@v4'
+        with:
+          path: 'artifacts'
+
+      - name: 'Package archives'
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          shopt -s nullglob
+          for dir in artifacts/MinedMap-*/; do
+            name="$(basename "$dir")"
+            (cd "$dir" && zip -r "$GITHUB_WORKSPACE/release/${name}.zip" .)
+          done
+          ls -l release
+
+      - name: 'Publish nightly release'
+        env:
+          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
+        run: |
+          set -euo pipefail
+          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          {
+            printf 'Automated nightly build of `main` (commit %s, built %s).\n\n' "$GITHUB_SHA" "$built"
+            printf 'These binaries are built from the latest development code and are not a stable release.\n'
+          } > release-notes.md
+          # Roll the nightly tag/release forward to the current commit.
+          gh release delete nightly --yes --cleanup-tag || true
+          gh release create nightly release/*.zip \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "Nightly build" \
+            --notes-file release-notes.md
 
   build-container:
     runs-on: ubuntu-latest
