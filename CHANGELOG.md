@@ -4,6 +4,18 @@
 
 ### Added
 
+- Added `--emit-player-data` option
+
+  Writes a `players.json` with per-player position, dimension, rotation, respawn
+  point, XP, health, food, inventory and ender chest (from `playerdata/*.dat`),
+  accumulated statistics (from `stats/*.json`), and resolved player names (from
+  `usercache.json` / `usernamecache.json`) for Java Edition worlds, so
+  downstream tools no longer need to parse the NBT player files themselves.
+
+  The `playerdata` and `stats` directories and the name cache files can be
+  overridden with `--player-data-dir`, `--stats-dir` and `--usercache` for
+  non-standard server layouts.
+
 - Added automated nightly release builds
 
   The CI workflow now publishes a rolling `nightly` prerelease with Linux,
@@ -18,6 +30,15 @@
   subdirectories, and the viewer gains a dimension switcher.
 
 ### Changed
+
+- `--emit-overlays` now writes a consolidated set of derived data
+
+  In addition to `inhabited_heatmap.json` and `block_features.json`, the
+  directory passed to `--emit-overlays` now also receives `structures.json`,
+  `pois.json` and `mobs.json` (Java Edition), so a single run produces the
+  complete derived dataset in one stable, documented location regardless of the
+  viewer-layer flags. The absolute path of every emitted file is printed to
+  stdout, and all files are written atomically.
 
 - Marker and overlay-data layers are now collected per dimension
 

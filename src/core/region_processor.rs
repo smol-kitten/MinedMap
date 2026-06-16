@@ -244,7 +244,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			textured_needed,
 			cave_needed,
 			mob_spawn_needed,
-			structures_needed: processor.config.structures,
+			structures_needed: processor.config.collect_structures(),
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
 			world_seed: processor.config.world_seed,

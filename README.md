@@ -155,27 +155,79 @@ processed for overlay data (see below). A few notes:
 
 ### Overlay data
 
-Passing `--emit-overlays <dir>` makes MinedMap write per-chunk overlay data
-while it walks the chunks during the normal render pass, so that no separate
-pass over the save data is needed. This option works for both Java and Bedrock
-Edition and does not change the generated map tiles. Two JSON files are written
-into `<dir>`, each keyed by dimension (`overworld`, `nether`, `end`):
+Passing `--emit-overlays <dir>` makes MinedMap write all derived per-chunk and
+marker data into one directory while it walks the chunks during the normal
+render pass, so that downstream tools do not need a separate, slow pass over the
+save data. This option works for both Java and Bedrock Edition and does not
+change the generated map tiles.
 
-* `inhabited_heatmap.json` lists `[chunkX, chunkZ, inhabitedTimeTicks]` for every
-  chunk with a non-zero `InhabitedTime`. Bedrock Edition has no equivalent of
-  `InhabitedTime`, so its heatmap entries are always empty.
-* `block_features.json` lists the chunks containing notable blocks — `rail`,
-  `farmland`, `nether_portal` and `end_portal` — as `[chunkX, chunkZ]`, plus a
-  `built` list of `[chunkX, chunkZ, score]` where the score is the number of
-  player-placed block entities (chests, furnaces, hoppers, …) in the chunk.
+The directory `<dir>` is a stable, documented location: the following files are
+written into it (all atomically, via a temporary file that is renamed into
+place), and the **absolute path of every file written is printed to stdout** so
+callers do not have to guess filenames:
 
-All coordinates are chunk coordinates (block coordinate `>> 4`).
+* `inhabited_heatmap.json` — dimension-keyed; lists `[chunkX, chunkZ,
+  inhabitedTimeTicks]` for every chunk with a non-zero `InhabitedTime`. Bedrock
+  Edition has no equivalent of `InhabitedTime`, so its heatmap entries are
+  always empty.
+* `block_features.json` — dimension-keyed; lists the chunks containing notable
+  blocks — `rail`, `farmland`, `nether_portal` and `end_portal` — as `[chunkX,
+  chunkZ]`, plus a `built` list of `[chunkX, chunkZ, score]` where the score is
+  the number of player-placed block entities (chests, furnaces, hoppers, …) in
+  the chunk.
+* `structures.json` — dimension-keyed; the bounding boxes of generated
+  structures.
+* `pois.json` — dimension-keyed points of interest. **Java Edition only.**
+* `mobs.json` — dimension-keyed mob markers. **Java Edition only.**
+
+In other words, `--emit-overlays` forces collection of the structure, POI and
+mob data regardless of the `--structures` / `--poi-markers` / `--mob-markers`
+viewer-layer flags, so a single run produces the complete set in `<dir>`. The
+exact JSON schemas are documented under [Output data files](#output-data-files)
+below. Bedrock Edition does not have Java's POI or entity region files, so it
+emits only `inhabited_heatmap.json`, `block_features.json` and `structures.json`.
+
+All coordinates in these files are chunk coordinates (block coordinate `>> 4`),
+except the structure bounding boxes, which use block coordinates.
 
 Passing `--overlay-layers` additionally writes this data into the viewer's
 output directory and exposes it as toggleable viewer layers: an inhabited-time
 heatmap, built-up areas, rail / farmland / portal chunk markers, and — for Java
 Edition worlds whose seed could be read — a slime-chunk layer. The viewer also
 gains a "Region grid" overlay drawing lines along region boundaries.
+
+### Player data
+
+Passing `--emit-player-data <dir>` (Java Edition) writes a single `players.json`
+into `<dir>` with one entry per player, so downstream tools do not have to parse
+the NBT player files themselves. The file is written atomically and its absolute
+path is printed to stdout. Each entry combines three sources:
+
+* `playerdata/<uuid>.dat` (gzipped NBT) — position, dimension, rotation, respawn
+  point, XP, health, food level, main inventory and ender chest contents;
+* `stats/<uuid>.json` — accumulated statistics (play time, deaths, kills,
+  travel distances, blocks mined/used, `killed_by` and `crafted` breakdowns);
+* `usercache.json` / `usernamecache.json` — the player name. These caches live
+  in the server directory, so MinedMap looks for them both in the input
+  directory and in its parent directory.
+
+The exact schema is documented under [Output data files](#output-data-files).
+Player UUIDs are taken from the `playerdata` file names. Bedrock Edition player
+data is not yet supported; passing the option for a Bedrock world logs a warning
+and skips the file.
+
+When the relevant files are not laid out in the standard way (for example when
+the input is a world directory but the caches live elsewhere), the locations can
+be overridden:
+
+* `--player-data-dir <dir>` — use a specific `playerdata` directory instead of
+  `<input>/playerdata`;
+* `--stats-dir <dir>` — use a specific statistics directory instead of
+  `<input>/stats`;
+* `--usercache <file>` — load player names from the given cache file(s) instead
+  of searching for `usercache.json` / `usernamecache.json`. Both the vanilla
+  array format and the Forge/NeoForge object format are accepted (auto-detected),
+  and the option may be given multiple times.
 
 ### Topographic layer
 
@@ -415,6 +467,53 @@ Written into the `overlays/` subdirectory when `--overlay-layers` is passed
 (and/or into the directory given to `--emit-overlays`). These use **chunk**
 coordinates and are documented in the [Overlay data](#overlay-data) section
 above.
+
+### `players.json` — player data (`--emit-player-data`)
+
+A JSON array of player objects, sorted by UUID, written into the directory given
+to `--emit-player-data`. Optional fields are omitted when absent: `name` (if no
+name cache entry was found), `spawn` (if no respawn point is set), `stats` (if no
+`stats/<uuid>.json` exists), and the `killed_by` / `crafted` maps (when empty).
+Positions use block coordinates; `rotation` is `[yaw, pitch]` in degrees;
+distance stats are in centimeters; `play_time` is in ticks (20 ticks ≈ 1
+second).
+
+```jsonc
+[
+  {
+    "uuid": "069a79f4-44e9-4726-a5be-fc90d2a28159",
+    "name": "Steve",
+    "pos": [10.5, 64.0, -20.5],
+    "dimension": "minecraft:overworld",
+    "rotation": [90.0, 0.0],
+    "spawn": [100, 70, -50],
+    "xp": { "level": 30, "total": 1395, "progress": 0.5 },
+    "health": 18.0,
+    "food": 17,
+    "stats": {
+      "play_time": 12000,
+      "deaths": 3,
+      "mob_kills": 42,
+      "player_kills": 0,
+      "walk_cm": 150000,
+      "sprint_cm": 0,
+      "swim_cm": 0,
+      "fly_cm": 0,
+      "blocks_mined": 150,
+      "blocks_placed": 30
+    },
+    "killed_by": { "minecraft:creeper": 2 },
+    "crafted": { "minecraft:torch": 64 },
+    "inventory": [
+      { "slot": 0, "id": "minecraft:diamond_sword", "count": 1 }
+    ],
+    "ender_items": []
+  }
+]
+```
+
+`blocks_placed` is the sum of the `minecraft:used` stat category, which
+approximates placements as Minecraft has no dedicated block-placement counter.
 
 ## Installation
 

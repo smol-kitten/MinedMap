@@ -274,6 +274,14 @@ pub struct Config {
 	pub input_dir: PathBuf,
 	/// Directory to emit overlay data to, if requested
 	pub emit_overlays: Option<PathBuf>,
+	/// Directory to emit per-player data to, if requested
+	pub emit_player_data: Option<PathBuf>,
+	/// Override for the player data directory
+	pub player_data_dir: Option<PathBuf>,
+	/// Override for the player statistics directory
+	pub player_stats_dir: Option<PathBuf>,
+	/// Explicit player name cache files (overriding auto-detection)
+	pub usercache_files: Vec<PathBuf>,
 	/// Whether to generate viewer overlay layers from the overlay data
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
@@ -419,6 +427,10 @@ impl Config {
 			end_region_dir,
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
+			emit_player_data: args.emit_player_data.clone(),
+			player_data_dir: args.player_data_dir.clone(),
+			player_stats_dir: args.stats_dir.clone(),
+			usercache_files: args.usercache.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
@@ -624,6 +636,24 @@ impl Config {
 	/// Returns whether per-chunk overlay data should be collected
 	pub fn wants_overlays(&self) -> bool {
 		self.emit_overlays.is_some() || self.overlay_layers
+	}
+
+	/// Returns whether generated structure bounding boxes should be collected
+	///
+	/// Collection is enabled by the `--structures` viewer layer as well as by
+	/// `--emit-overlays`, which consolidates all derived data into one directory.
+	pub fn collect_structures(&self) -> bool {
+		self.structures || self.emit_overlays.is_some()
+	}
+
+	/// Returns whether points of interest should be collected
+	pub fn collect_pois(&self) -> bool {
+		self.poi_markers || self.emit_overlays.is_some()
+	}
+
+	/// Returns whether mob markers should be collected
+	pub fn collect_mobs(&self) -> bool {
+		self.mob_markers || self.emit_overlays.is_some()
 	}
 
 	/// Returns the directory viewer overlay layers are written to
