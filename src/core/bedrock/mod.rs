@@ -1088,7 +1088,7 @@ mod test {
 			serde_json::from_slice(&std::fs::read(output_dir.join("structures.json")).unwrap())
 				.unwrap();
 		assert_eq!(
-			structures["structures"],
+			structures["overworld"],
 			serde_json::json!([{ "type": "minecraft:village", "bb": [10, 20, 40, 60] }])
 		);
 

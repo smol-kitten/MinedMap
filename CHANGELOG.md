@@ -10,6 +10,16 @@
   Edition). Their tiles are written under `nether/` and `end/` subdirectories,
   and the viewer gains a dimension switcher.
 
+### Changed
+
+- Marker and overlay-data layers are now collected per dimension
+
+  Signs, POIs, mobs and generated structures are read from each rendered
+  dimension's data instead of the overworld only. The marker data files
+  (`pois.json`, `mobs.json`, `structures.json`, `entities.json`) are now keyed
+  by dimension name, and the viewer shows the markers for the dimension
+  selected in the switcher.
+
 - Added `--mob-markers` option
 
   Reads the world's entity data and shows hostile and passive mobs as toggleable
