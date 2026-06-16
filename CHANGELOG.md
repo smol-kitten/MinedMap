@@ -4,6 +4,12 @@
 
 ### Added
 
+- Added `nbt2json` and `bedrock_keys` companion tools
+
+  Two standalone Cargo examples: `nbt2json` converts a single NBT data file
+  (gzip-compressed or raw) to JSON, and `bedrock_keys` lists and decodes the keys
+  of a Bedrock Edition world's LevelDB database.
+
 - Added incremental `--emit-*` updates and a `--since` option
 
   Each region's contribution to the marker/overlay outputs (`pois.json`,

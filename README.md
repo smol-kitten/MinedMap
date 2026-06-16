@@ -564,6 +564,30 @@ world directory.
 }
 ```
 
+## Companion tools
+
+The repository ships two small standalone diagnostic tools as Cargo examples,
+useful for inspecting save data or building external integrations:
+
+* **`nbt2json`** — converts a single NBT data file (`level.dat`, a
+  `playerdata/<uuid>.dat`, …) to JSON on standard output. Gzip-compressed and raw
+  NBT are both accepted; pass `--pretty` for indented output.
+
+  ```sh
+  cargo run --release -p minedmap-nbt --example nbt2json -- level.dat
+  ```
+
+* **`bedrock_keys`** — lists the keys of a Bedrock Edition world's LevelDB
+  database, decoding chunk keys into their dimension, coordinates and record
+  type, string keys into text, and anything else into hex. `--prefix` filters by
+  key text and `--values` also prints each value's size.
+
+  ```sh
+  cargo run --release --example bedrock_keys -- /path/to/bedrock_world --values
+  ```
+
+The compiled binaries are written to `target/release/examples/`.
+
 ## Installation
 
 Binary builds of the map generator for Linux and Windows, as well as an archive
