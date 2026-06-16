@@ -4,6 +4,7 @@ use std::{
 	collections::{BTreeMap, BTreeSet},
 	fmt::Debug,
 	path::{Path, PathBuf},
+	time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -83,6 +84,12 @@ pub const MIPMAP_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
 /// Increase when entity collection changes bacause of code changes.
 pub const ENTITIES_FILE_META_VERSION: FileMetaVersion = FileMetaVersion(4);
 
+/// MinedMap per-region overlay/marker cache version number
+///
+/// Increase when the cached per-region overlay, POI or mob data layout changes,
+/// to invalidate stale `--since` caches.
+pub const EMIT_CACHE_META_VERSION: FileMetaVersion = FileMetaVersion(0);
+
 /// Coordinate pair of a generated tile
 ///
 /// Each tile corresponds to one Minecraft region file
@@ -153,6 +160,15 @@ pub struct ProcessedEntities {
 /// Can be used for input regions, processed data or rendered tiles
 fn coord_filename(coords: TileCoords, ext: &str) -> String {
 	format!("r.{}.{}.{}", coords.x, coords.z, ext)
+}
+
+/// Converts a (possibly negative) Unix timestamp in seconds to a [SystemTime]
+fn unix_to_systemtime(ts: i64) -> SystemTime {
+	if ts >= 0 {
+		SystemTime::UNIX_EPOCH + Duration::from_secs(ts as u64)
+	} else {
+		SystemTime::UNIX_EPOCH - Duration::from_secs(ts.unsigned_abs())
+	}
 }
 
 /// Tile kind corresponding to a map layer
@@ -284,6 +300,8 @@ pub struct Config {
 	pub usercache_files: Vec<PathBuf>,
 	/// Directory to emit world-level statistics to, if requested
 	pub emit_world_stats: Option<PathBuf>,
+	/// Only recompute per-region emit data for regions modified after this time
+	pub since: Option<SystemTime>,
 	/// Whether to generate viewer overlay layers from the overlay data
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
@@ -434,6 +452,7 @@ impl Config {
 			player_stats_dir: args.stats_dir.clone(),
 			usercache_files: args.usercache.clone(),
 			emit_world_stats: args.emit_world_stats.clone(),
+			since: args.since.map(unix_to_systemtime),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
@@ -522,6 +541,22 @@ impl Config {
 	pub fn processed_path(&self, coords: TileCoords) -> PathBuf {
 		let filename = coord_filename(coords, "bin");
 		[&self.processed_dir, Path::new(&filename)].iter().collect()
+	}
+
+	/// Constructs the path of a cached per-region overlay contribution
+	pub fn overlay_cache_path(&self, coords: TileCoords) -> PathBuf {
+		let filename = coord_filename(coords, "overlay");
+		[&self.processed_dir, Path::new(&filename)].iter().collect()
+	}
+
+	/// Directory holding cached per-region POI contributions
+	pub fn poi_cache_dir(&self) -> PathBuf {
+		[&self.processed_dir, Path::new("poi")].iter().collect()
+	}
+
+	/// Directory holding cached per-region mob contributions
+	pub fn mob_cache_dir(&self) -> PathBuf {
+		[&self.processed_dir, Path::new("mob")].iter().collect()
 	}
 
 	/// Constructs the base output path for processed entity data

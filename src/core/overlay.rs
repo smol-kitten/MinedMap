@@ -15,7 +15,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{io::fs, world::de};
 
@@ -86,7 +86,7 @@ pub fn is_built_block_entity(id: &str) -> bool {
 }
 
 /// A generated structure's bounding box, for the structures viewer layer
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Structure {
 	/// Structure type ID (for example `minecraft:village`)
 	#[serde(rename = "type")]
@@ -192,7 +192,10 @@ impl ChunkOverlayInfo {
 /// Accumulated overlay data for a single dimension
 ///
 /// Each entry stores absolute chunk coordinates (block coordinate `>> 4`).
-#[derive(Debug, Default)]
+///
+/// Implements [Serialize]/[Deserialize] so a region's contribution can be cached
+/// on disk for incremental `--since` runs (see [super::region_cache]).
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct DimensionOverlay {
 	/// `[chunkX, chunkZ, inhabitedTimeTicks]` for chunks with ticks > 0
 	pub inhabited: Vec<(i32, i32, i64)>,

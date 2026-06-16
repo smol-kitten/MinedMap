@@ -7,12 +7,10 @@
 //! dimension-keyed `mobs.json` consumed by the viewer. The output schema is
 //! documented in the README ("Output data files").
 
-use std::{ffi::OsStr, path::Path};
+use std::path::Path;
 
 use anyhow::Result;
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
 
 use super::common::*;
 
@@ -136,7 +134,7 @@ fn category(id: &str) -> Option<&'static str> {
 }
 
 /// Collected mob marker positions by category (block coordinates)
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MobData {
 	/// Hostile mobs
 	hostile: Vec<(i32, i32)>,
@@ -153,12 +151,6 @@ impl MobData {
 		}
 	}
 
-	/// Merges another [MobData] into this one
-	fn merge(&mut self, mut other: MobData) {
-		self.hostile.append(&mut other.hostile);
-		self.passive.append(&mut other.passive);
-	}
-
 	/// Sorts all categories for deterministic output
 	fn finish(&mut self) {
 		self.hostile.sort_unstable();
@@ -166,16 +158,11 @@ impl MobData {
 	}
 }
 
-/// Returns whether a file name matches the `r.X.Z.mca` region pattern
-fn is_region_filename(file_name: &OsStr) -> bool {
-	file_name
-		.to_str()
-		.map(|name| {
-			let parts: Vec<_> = name.split('.').collect();
-			matches!(parts.as_slice(), ["r", x, z, "mca"]
-				if x.parse::<i32>().is_ok() && z.parse::<i32>().is_ok())
-		})
-		.unwrap_or(false)
+impl super::region_cache::Mergeable for MobData {
+	fn merge(&mut self, mut other: MobData) {
+		self.hostile.append(&mut other.hostile);
+		self.passive.append(&mut other.passive);
+	}
 }
 
 /// Reads the mobs of a single entity region file
@@ -200,30 +187,17 @@ fn collect_file(path: &Path) -> Result<MobData> {
 }
 
 /// Collects mob markers from the entity region files of one dimension
+///
+/// Per-region contributions are cached so unchanged regions are not re-read on
+/// later (incremental) runs; see [super::region_cache].
 pub fn collect(config: &Config) -> MobData {
-	let mut files = Vec::new();
-	if let Ok(dir) = config.entity_region_dir.read_dir() {
-		for entry in dir.filter_map(Result::ok) {
-			if entry.file_type().map(|t| t.is_file()).unwrap_or(false)
-				&& is_region_filename(&entry.file_name())
-			{
-				files.push(entry.path());
-			}
-		}
-	}
-
-	let mut data = files
-		.par_iter()
-		.map(|path| {
-			collect_file(path).unwrap_or_else(|err| {
-				warn!("Failed to read entity file {}: {:?}", path.display(), err);
-				MobData::default()
-			})
-		})
-		.reduce(MobData::default, |mut a, b| {
-			a.merge(b);
-			a
-		});
+	let mut data: MobData = super::region_cache::collect_cached(
+		&config.entity_region_dir,
+		&config.mob_cache_dir(),
+		EMIT_CACHE_META_VERSION,
+		config.since,
+		collect_file,
+	);
 	data.finish();
 	data
 }

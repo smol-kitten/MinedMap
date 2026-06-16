@@ -227,6 +227,25 @@ Edition omits the seed and the player-derived block totals (it has no
 `InhabitedTime` and no Java-style player statistics). The schema is documented
 under [Output data files](#output-data-files).
 
+### Incremental updates
+
+Map tiles are always updated incrementally — a region is re-rendered only when
+its source file is newer than the previously generated tiles. The `--emit-*`
+data outputs are incremental too: each region's contribution to `pois.json`,
+`mobs.json`, `structures.json` and the overlay data is cached next to the other
+processed data, so a repeated `--emit-*` run only re-reads the region files that
+changed.
+
+`--since <unix-ts>` makes this cheaper still: regions whose source file was not
+modified after the given Unix timestamp (in seconds) are taken from the cache
+without re-reading, so a caller that knows when the world last changed (for
+example the time of the last `rsync`) can skip the bulk of the work. A region
+that has no cached contribution yet is always re-read, so `--since` never drops
+data — populate the cache with one full run first. `--since` applies to Java
+Edition region-derived data; `players.json` is reused when no player or stats
+file changed after the timestamp, and `world.json` is always regenerated (its
+inputs are cheap). Bedrock Edition reads its LevelDB in full each run.
+
 When the relevant files are not laid out in the standard way (for example when
 the input is a world directory but the caches live elsewhere), the locations can
 be overridden:

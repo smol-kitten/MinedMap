@@ -998,6 +998,7 @@ mod test {
 			player_stats_dir: None,
 			usercache_files: Vec::new(),
 			emit_world_stats: Some(overlay_dir.to_path_buf()),
+			since: None,
 			overlay_layers: true,
 			height_layer: true,
 			biome_layer: true,
