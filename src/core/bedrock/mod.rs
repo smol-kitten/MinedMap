@@ -8,10 +8,11 @@
 //! translated to Java Edition identifiers ([blocks]) so the existing color
 //! tables can be reused.
 //!
-//! For each 32×32 chunk region of the overworld a [ProcessedRegion] is produced
-//! and written in the same format as the Java path, after which [TileRenderer],
-//! [TileMipmapper] and [MetadataWriter] generate the map tiles and metadata.
-//! Overlay data is collected for all dimensions.
+//! For each 32×32 chunk region a [ProcessedRegion] is produced and written in
+//! the same format as the Java path, after which [TileRenderer], [TileMipmapper]
+//! and [MetadataWriter] generate the map tiles and metadata. The overworld is
+//! always rendered; the nether and end are rendered when `--nether`/`--end` are
+//! passed (otherwise only their overlay data is collected).
 
 mod blocks;
 mod db;
@@ -227,56 +228,74 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 	info!("Indexing Bedrock chunks...");
 	let index = build_index(&mut db)?;
 
-	fs::create_dir_all(&config.processed_dir)?;
 	let atlas = config
 		.block_textures
 		.as_ref()
 		.map(|dir| TextureAtlas::new(dir, config.texture_scale));
-	if atlas.is_some() {
-		fs::create_dir_all(&config.tile_dir(TileKind::Textured, 0))?;
-	}
-	if config.cave_layer {
-		fs::create_dir_all(&config.tile_dir(TileKind::Cavemap, 0))?;
-	}
 
 	info!("Processing Bedrock chunks...");
 	let mut overlays = OverlayData::default();
-	let mut overworld_regions = Vec::new();
+	let mut dimension_tiles: Vec<(Dimension, Vec<TileCoordMap>)> = Vec::new();
 
-	for ((dim, rx, rz), chunks) in &index {
-		let raw = fetch_region(&mut db, *dim, chunks);
+	for dim in [Dimension::Overworld, Dimension::Nether, Dimension::End] {
+		let render = match dim {
+			Dimension::Overworld => true,
+			Dimension::Nether => config.render_nether,
+			Dimension::End => config.render_end,
+		};
+		let dim_config = config.for_dimension(dim, PathBuf::new());
 
-		if *dim == Dimension::Overworld {
-			let coords = TileCoords { x: *rx, z: *rz };
-			let region_overlay = process_overworld_region(
-				config,
-				&block_types,
-				atlas.as_ref(),
-				coords,
-				&raw,
-				input_timestamp,
-			)?;
-			overlays.overworld.merge(region_overlay);
-			overworld_regions.push(coords);
-		} else {
-			let region_overlay = collect_region_overlay(&block_types, &raw);
-			overlays.dimension_mut(*dim).merge(region_overlay);
+		if render {
+			fs::create_dir_all(&dim_config.processed_dir)?;
+			if atlas.is_some() {
+				fs::create_dir_all(&dim_config.tile_dir(TileKind::Textured, 0))?;
+			}
+			if dim_config.cave_layer {
+				fs::create_dir_all(&dim_config.tile_dir(TileKind::Cavemap, 0))?;
+			}
+		}
+
+		let mut regions = Vec::new();
+		for ((d, rx, rz), chunks) in &index {
+			if *d != dim {
+				continue;
+			}
+			let raw = fetch_region(&mut db, dim, chunks);
+			if render {
+				let coords = TileCoords { x: *rx, z: *rz };
+				let region_overlay = process_region(
+					&dim_config,
+					&block_types,
+					atlas.as_ref(),
+					coords,
+					&raw,
+					input_timestamp,
+				)?;
+				overlays.dimension_mut(dim).merge(region_overlay);
+				regions.push(coords);
+			} else {
+				let region_overlay = collect_region_overlay(&block_types, &raw);
+				overlays.dimension_mut(dim).merge(region_overlay);
+			}
+		}
+
+		if render {
+			// Sort regions in a zig-zag pattern to optimize cache usage.
+			regions
+				.sort_unstable_by_key(|&TileCoords { x, z }| (x, if x % 2 == 0 { z } else { -z }));
+			info!(
+				"Processed Bedrock {} ({} regions)",
+				dim.key(),
+				regions.len()
+			);
+
+			TileRenderer::new(&dim_config, rt, &regions).run()?;
+			let tiles = TileMipmapper::new(&dim_config, &regions).run()?;
+			dimension_tiles.push((dim, tiles));
 		}
 	}
 
-	// Sort regions in a zig-zag pattern to optimize cache usage (matching the
-	// Java region processor).
-	overworld_regions
-		.sort_unstable_by_key(|&TileCoords { x, z }| (x, if x % 2 == 0 { z } else { -z }));
-
-	info!(
-		"Processed Bedrock chunks ({} overworld regions)",
-		overworld_regions.len()
-	);
-
-	TileRenderer::new(config, rt, &overworld_regions).run()?;
-	let tiles = TileMipmapper::new(config, &overworld_regions).run()?;
-	MetadataWriter::new(config, &[(Dimension::Overworld, tiles)]).run()?;
+	MetadataWriter::new(config, &dimension_tiles).run()?;
 
 	// Bedrock has no per-chunk structure data like Java, but village bounds are
 	// stored under VILLAGE_*_INFO keys; surface them as structures.
@@ -413,7 +432,7 @@ fn decode_sections(raw: &RawChunk) -> BTreeMap<i32, SubChunkLayer> {
 }
 
 /// Builds the [ProcessedRegion] and overlay data for an overworld region
-fn process_overworld_region(
+fn process_region(
 	config: &Config,
 	block_types: &BlockTypes,
 	atlas: Option<&TextureAtlas>,
@@ -618,7 +637,7 @@ fn render_textured_chunk(
 		}
 	}
 
-	// Bedrock worlds use a single plains biome (see process_overworld_region).
+	// Bedrock worlds use a single plains biome (see process_region).
 	let mut biome_list = IndexSet::new();
 	biome_list.insert(*block_types_fallback_biome());
 
@@ -924,7 +943,7 @@ mod test {
 		Config {
 			edition: Edition::Bedrock,
 			dim_subdir: std::path::PathBuf::new(),
-			render_nether: false,
+			render_nether: true,
 			render_end: false,
 			nether_region_dir: input_dir.join("nether"),
 			end_region_dir: input_dir.join("end"),
@@ -1000,6 +1019,13 @@ mod test {
 			// A village record, to exercise village/structure extraction
 			db.put(b"VILLAGE_test_INFO", &village_info_value(10, 20, 40, 60))
 				.unwrap();
+			// A nether chunk, to exercise nether dimension rendering
+			let nether_key = subchunk_key(Dimension::Nether, 0, 0, 0);
+			db.put(
+				&nether_key,
+				&subchunk_value(&["minecraft:air", "minecraft:netherrack"]),
+			)
+			.unwrap();
 			db.flush().unwrap();
 			db.close().unwrap();
 		}
@@ -1078,6 +1104,11 @@ mod test {
 		assert_eq!(info["features"]["contour"], true);
 		assert_eq!(info["features"]["overlays"], true);
 		assert_eq!(info["features"]["textured"], true);
+
+		// The nether dimension must have been rendered to its own subdirectory
+		assert!(output_dir.join("nether/map/0/r.0.0.png").is_file());
+		assert!(info["dimensions"]["overworld"]["mipmaps"].is_array());
+		assert!(info["dimensions"]["nether"]["mipmaps"].is_array());
 
 		// Overlay layer data must also be written into the viewer output dir
 		assert!(output_dir.join("overlays/block_features.json").is_file());

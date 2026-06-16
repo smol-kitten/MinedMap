@@ -111,6 +111,12 @@ write and to read.
 ### Nether and End
 
 By default only the overworld is rendered. Passing `--nether` and/or `--end`
+additionally renders those dimensions (both Java and Bedrock Edition). Their
+tiles are written under `nether/` and `end/` subdirectories of the output, and
+the viewer shows a dimension switcher in the top-right corner when more than one
+dimension is available. All map layers (illumination, topography, biomes, caves, contours,
+textures) are produced per dimension; the marker and overlay-data layers
+(signs, POIs, mobs, structures, …) are collected for the overworld only.
 (Java Edition) additionally renders those dimensions. Their tiles are written
 under `nether/` and `end/` subdirectories of the output, and the viewer shows a
 dimension switcher in the top-right corner when more than one dimension is
