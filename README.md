@@ -212,9 +212,13 @@ path is printed to stdout. Each entry combines three sources:
   directory and in its parent directory.
 
 The exact schema is documented under [Output data files](#output-data-files).
-Player UUIDs are taken from the `playerdata` file names. Bedrock Edition player
-data is not yet supported; passing the option for a Bedrock world logs a warning
-and skips the file.
+Player UUIDs are taken from the `playerdata` file names.
+
+Bedrock Edition is also supported: the local player (`~local_player`) and any
+server players (`player_server_*`) are read from the world's LevelDB database and
+mapped into the same schema. Bedrock has no player statistics or cached names, so
+`stats`/`killed_by`/`crafted` and `name` are omitted, and the `--player-data-dir`,
+`--stats-dir` and `--usercache` overrides do not apply.
 
 ### World statistics
 

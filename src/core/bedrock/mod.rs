@@ -17,6 +17,7 @@
 mod blocks;
 mod db;
 mod nbt;
+mod player;
 mod subchunk;
 
 use std::{
@@ -351,8 +352,10 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 		super::write_json_emit(&dir.join("structures.json"), &structures)?;
 	}
 
-	if config.emit_player_data.is_some() {
-		warn!("--emit-player-data is not yet supported for Bedrock Edition; skipping");
+	if let Some(dir) = &config.emit_player_data {
+		let players = player::collect(&mut db);
+		fs::create_dir_all(dir)?;
+		super::write_json_emit(&dir.join("players.json"), &players)?;
 	}
 
 	Ok(())
@@ -964,6 +967,50 @@ mod test {
 		data
 	}
 
+	/// Builds a `~local_player` value (little-endian NBT) with a position, a
+	/// dimension, an XP level and a one-item inventory
+	fn local_player_value() -> Vec<u8> {
+		/// Appends a named tag header (tag byte + name)
+		fn header(data: &mut Vec<u8>, tag: u8, name: &str) {
+			data.push(tag);
+			data.extend_from_slice(&(name.len() as u16).to_le_bytes());
+			data.extend_from_slice(name.as_bytes());
+		}
+
+		let mut data = vec![10u8, 0, 0]; // compound, empty name
+
+		// Pos: list of 3 floats
+		header(&mut data, 9, "Pos");
+		data.push(5); // element tag: float
+		data.extend_from_slice(&3i32.to_le_bytes());
+		for v in [1.5f32, 72.0, -3.5] {
+			data.extend_from_slice(&v.to_le_bytes());
+		}
+
+		// DimensionId and PlayerLevel ints
+		header(&mut data, 3, "DimensionId");
+		data.extend_from_slice(&0i32.to_le_bytes());
+		header(&mut data, 3, "PlayerLevel");
+		data.extend_from_slice(&7i32.to_le_bytes());
+
+		// Inventory: list of one item compound { Name, Count, Slot }
+		header(&mut data, 9, "Inventory");
+		data.push(10); // element tag: compound
+		data.extend_from_slice(&1i32.to_le_bytes());
+		header(&mut data, 8, "Name");
+		let item = b"minecraft:apple";
+		data.extend_from_slice(&(item.len() as u16).to_le_bytes());
+		data.extend_from_slice(item);
+		header(&mut data, 1, "Count");
+		data.push(3);
+		header(&mut data, 1, "Slot");
+		data.push(0);
+		data.push(0); // end of the item compound
+
+		data.push(0); // end of the root compound
+		data
+	}
+
 	/// Builds a Bedrock-style `level.dat` with the given spawn coordinates
 	fn level_dat(spawn_x: i32, spawn_z: i32) -> Vec<u8> {
 		let mut body = vec![10u8, 0, 0]; // compound, empty name
@@ -993,7 +1040,7 @@ mod test {
 			end_region_dir: input_dir.join("end"),
 			input_dir: input_dir.to_path_buf(),
 			emit_overlays: Some(overlay_dir.to_path_buf()),
-			emit_player_data: None,
+			emit_player_data: Some(overlay_dir.to_path_buf()),
 			player_data_dir: None,
 			player_stats_dir: None,
 			usercache_files: Vec::new(),
@@ -1069,6 +1116,8 @@ mod test {
 			// A village record, to exercise village/structure extraction
 			db.put(b"VILLAGE_test_INFO", &village_info_value(10, 20, 40, 60))
 				.unwrap();
+			// A local player, to exercise --emit-player-data
+			db.put(b"~local_player", &local_player_value()).unwrap();
 			// A nether chunk, to exercise nether dimension rendering
 			let nether_key = subchunk_key(Dimension::Nether, 0, 0, 0);
 			db.put(
@@ -1188,6 +1237,19 @@ mod test {
 		assert!(world["size_bytes"].as_u64().unwrap() > 0);
 		// Bedrock has no Java-style player stats
 		assert_eq!(world["blocks_mined"], 0);
+
+		// --emit-player-data must read the ~local_player record from the LevelDB
+		let players: serde_json::Value =
+			serde_json::from_slice(&std::fs::read(overlay_dir.join("players.json")).unwrap())
+				.unwrap();
+		assert_eq!(players.as_array().unwrap().len(), 1);
+		let player = &players[0];
+		assert_eq!(player["uuid"], "~local_player");
+		assert_eq!(player["dimension"], "minecraft:overworld");
+		assert_eq!(player["pos"][0], 1.5);
+		assert_eq!(player["xp"]["level"], 7);
+		assert_eq!(player["inventory"][0]["id"], "minecraft:apple");
+		assert_eq!(player["inventory"][0]["count"], 3);
 
 		let _ = std::fs::remove_dir_all(&base);
 	}
