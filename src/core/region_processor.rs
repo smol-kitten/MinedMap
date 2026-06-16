@@ -102,6 +102,8 @@ struct SingleRegionData {
 	textured: Option<image::RgbaImage>,
 	/// Cave layer intermediate data, if the cave layer is enabled
 	cave: Option<image::RgbaImage>,
+	/// Mob-spawn layer intermediate data, if the mob-spawn layer is enabled
+	mob_spawn: Option<image::RgbaImage>,
 	/// Processed entity intermediate data
 	entities: ProcessedEntities,
 	/// Accumulated overlay data for the region (overworld dimension)
@@ -123,6 +125,7 @@ impl Default for SingleRegionData {
 			lightmap,
 			textured: None,
 			cave: None,
+			mob_spawn: None,
 			entities: Default::default(),
 			overlay: Default::default(),
 			has_unknown: false,
@@ -150,6 +153,8 @@ struct SingleRegionProcessor<'a> {
 	textured_path: PathBuf,
 	/// Cave tile output filename
 	cave_path: PathBuf,
+	/// Mob-spawn tile output filename
+	mob_spawn_path: PathBuf,
 	/// Timestamp of last modification of input file
 	input_timestamp: SystemTime,
 	/// Timestamp of last modification of processed region output file (if valid)
@@ -170,6 +175,8 @@ struct SingleRegionProcessor<'a> {
 	textured_needed: bool,
 	/// True if the cave tile needs to be updated
 	cave_needed: bool,
+	/// True if the mob-spawn tile needs to be updated
+	mob_spawn_needed: bool,
 	/// True if generated structures should be collected
 	structures_needed: bool,
 	/// Texture atlas for the textured layer, if enabled
@@ -203,12 +210,17 @@ impl<'a> SingleRegionProcessor<'a> {
 		let cave_path = processor.config.tile_path(TileKind::Cavemap, 0, coords);
 		let cave_timestamp = fs::read_timestamp(&cave_path, CAVEMAP_FILE_META_VERSION);
 
+		let mob_spawn_path = processor.config.tile_path(TileKind::Mobspawn, 0, coords);
+		let mob_spawn_timestamp = fs::read_timestamp(&mob_spawn_path, MOBSPAWN_FILE_META_VERSION);
+
 		let output_needed = Some(input_timestamp) > output_timestamp;
 		let lightmap_needed = Some(input_timestamp) > lightmap_timestamp;
 		let entities_needed = Some(input_timestamp) > entities_timestamp;
 		let textured_needed =
 			processor.texture_atlas.is_some() && Some(input_timestamp) > textured_timestamp;
 		let cave_needed = processor.config.cave_layer && Some(input_timestamp) > cave_timestamp;
+		let mob_spawn_needed =
+			processor.config.mob_spawn && Some(input_timestamp) > mob_spawn_timestamp;
 
 		Ok(SingleRegionProcessor {
 			block_types: &processor.block_types,
@@ -220,6 +232,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			entities_path,
 			textured_path,
 			cave_path,
+			mob_spawn_path,
 			input_timestamp,
 			output_timestamp,
 			lightmap_timestamp,
@@ -230,11 +243,39 @@ impl<'a> SingleRegionProcessor<'a> {
 			overlays_needed: processor.config.wants_overlays(),
 			textured_needed,
 			cave_needed,
+			mob_spawn_needed,
 			structures_needed: processor.config.structures,
 			texture_atlas: processor.texture_atlas.as_ref(),
 			unknown_blocks: processor.config.unknown_blocks,
 			world_seed: processor.config.world_seed,
 			image_format: processor.config.tile_image_format(),
+		})
+	}
+
+	/// Renders a mob-spawn subtile from surface block and block light data
+	///
+	/// A pixel is highlighted where a hostile mob could spawn at night: a solid
+	/// (opaque, non-water) surface block with a block light level of 0.
+	fn render_chunk_mobspawn(
+		blocks: &layer::BlockArray,
+		block_light: &layer::BlockLightArray,
+	) -> image::RgbaImage {
+		/// Width/height of a chunk subtile
+		const N: u32 = BLOCKS_PER_CHUNK as u32;
+
+		image::RgbaImage::from_fn(N, N, |x, z| {
+			let xz = LayerBlockCoords {
+				x: BlockX::new(x),
+				z: BlockZ::new(z),
+			};
+			let spawnable = blocks[xz].is_some_and(|color| {
+				color.is(resource::BlockFlag::Opaque) && !color.is(resource::BlockFlag::Water)
+			}) && block_light[xz] == 0;
+			if spawnable {
+				image::Rgba([220, 40, 40, 150])
+			} else {
+				image::Rgba([0, 0, 0, 0])
+			}
 		})
 	}
 
@@ -331,6 +372,26 @@ impl<'a> SingleRegionProcessor<'a> {
 		)
 	}
 
+	/// Saves a mob-spawn tile
+	///
+	/// The timestamp is the time of the last modification of the input region data.
+	fn save_mobspawn(&self, mob_spawn: &image::RgbaImage) -> Result<()> {
+		if !self.mob_spawn_needed {
+			return Ok(());
+		}
+
+		fs::create_with_timestamp(
+			&self.mob_spawn_path,
+			MOBSPAWN_FILE_META_VERSION,
+			self.input_timestamp,
+			|file| {
+				mob_spawn
+					.write_to(file, self.image_format)
+					.context("Failed to save image")
+			},
+		)
+	}
+
 	/// Saves processed entity data
 	///
 	/// The timestamp is the time of the last modification of the input region data.
@@ -378,6 +439,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.entities_needed
 			&& !self.textured_needed
 			&& !self.cave_needed
+			&& !self.mob_spawn_needed
 		{
 			return Ok(());
 		}
@@ -401,7 +463,10 @@ impl<'a> SingleRegionProcessor<'a> {
 			overlay_chunk(cave, &chunk_image, chunk_coords);
 		}
 
-		if (self.output_needed || self.lightmap_needed || self.textured_needed)
+		if (self.output_needed
+			|| self.lightmap_needed
+			|| self.textured_needed
+			|| self.mob_spawn_needed)
 			&& let Some(layer::LayerData {
 				blocks,
 				biomes,
@@ -438,6 +503,11 @@ impl<'a> SingleRegionProcessor<'a> {
 					i64::from(chunk_coords.x.0) * BLOCKS_PER_CHUNK as i64 * scale,
 					i64::from(chunk_coords.z.0) * BLOCKS_PER_CHUNK as i64 * scale,
 				);
+			}
+
+			if let (true, Some(mob_spawn)) = (self.mob_spawn_needed, data.mob_spawn.as_mut()) {
+				let chunk_image = Self::render_chunk_mobspawn(&blocks, &block_light);
+				overlay_chunk(mob_spawn, &chunk_image, chunk_coords);
 			}
 
 			if self.output_needed {
@@ -479,6 +549,7 @@ impl<'a> SingleRegionProcessor<'a> {
 			&& !self.overlays_needed
 			&& !self.textured_needed
 			&& !self.cave_needed
+			&& !self.mob_spawn_needed
 			&& !self.structures_needed
 		{
 			debug!(
@@ -501,6 +572,10 @@ impl<'a> SingleRegionProcessor<'a> {
 		if self.cave_needed {
 			const N: u32 = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32;
 			data.cave = Some(image::RgbaImage::new(N, N));
+		}
+		if self.mob_spawn_needed {
+			const N: u32 = (BLOCKS_PER_CHUNK * CHUNKS_PER_REGION) as u32;
+			data.mob_spawn = Some(image::RgbaImage::new(N, N));
 		}
 
 		if let Err(err) = self.process_chunks(&mut data) {
@@ -525,6 +600,7 @@ impl<'a> SingleRegionProcessor<'a> {
 		let overlay = std::mem::take(&mut data.overlay);
 		let textured = data.textured.take();
 		let cave = data.cave.take();
+		let mob_spawn = data.mob_spawn.take();
 
 		let processed_region = ProcessedRegion {
 			biome_list: data.biome_list.into_iter().collect(),
@@ -539,6 +615,9 @@ impl<'a> SingleRegionProcessor<'a> {
 		}
 		if let Some(cave) = cave {
 			self.save_cave(&cave)?;
+		}
+		if let Some(mob_spawn) = mob_spawn {
+			self.save_mobspawn(&mob_spawn)?;
 		}
 
 		let status = if data.has_unknown {
@@ -609,6 +688,9 @@ impl<'a> RegionProcessor<'a> {
 		}
 		if self.config.cave_layer {
 			fs::create_dir_all(&self.config.tile_dir(TileKind::Cavemap, 0))?;
+		}
+		if self.config.mob_spawn {
+			fs::create_dir_all(&self.config.tile_dir(TileKind::Mobspawn, 0))?;
 		}
 
 		info!("Processing region files...");

@@ -866,6 +866,7 @@ mod test {
 			height_layer: true,
 			biome_layer: true,
 			cave_layer: true,
+			mob_spawn: false,
 			block_textures: Some(input_dir.join("textures")),
 			texture_scale: 4,
 			unknown_blocks: UnknownBlockMode::Color,

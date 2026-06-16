@@ -493,6 +493,7 @@ window.createMap = function () {
 			params.height = parseInt(args['height']);
 			params.biome = parseInt(args['biome']);
 			params.cave = parseInt(args['cave']);
+			params.mobspawn = parseInt(args['mobspawn']);
 			params.signs = parseInt(args['signs'] ?? '1');
 			params.marker = (args['marker'] ?? '').split(',').map((i) => +i);
 
@@ -563,6 +564,27 @@ window.createMap = function () {
 			overlayMaps['Caves'] = caveLayer;
 			if (params.cave)
 				map.addLayer(caveLayer);
+		}
+
+		let mobspawnLayer;
+		if (features.mobspawn) {
+			mobspawnLayer = new MinedMapLayer(mipmaps, 'mobspawn', tile_extension);
+			overlayMaps['Mob spawning'] = mobspawnLayer;
+			if (params.mobspawn)
+				map.addLayer(mobspawnLayer);
+		}
+
+		// Spawn-chunk boundary (the area kept loaded around the world spawn)
+		{
+			const cx = Math.floor(spawn.x / 16);
+			const cz = Math.floor(spawn.z / 16);
+			const r = 9; // 19x19 chunks
+			const spawnChunksLayer = L.layerGroup();
+			L.rectangle(
+				[[-(cz - r) * 16, (cx - r) * 16], [-(cz + r + 1) * 16, (cx + r + 1) * 16]],
+				{color: '#ffaa00', weight: 2, fill: false, interactive: false},
+			).addTo(spawnChunksLayer);
+			overlayMaps['Spawn chunks'] = spawnChunksLayer;
 		}
 
 		if (features.overlays) {
@@ -659,6 +681,8 @@ window.createMap = function () {
 				ret += '&biome=1';
 			if (features.cave && map.hasLayer(caveLayer))
 				ret += '&cave=1';
+			if (features.mobspawn && map.hasLayer(mobspawnLayer))
+				ret += '&mobspawn=1';
 			if (features.signs && !map.hasLayer(signLayer))
 				ret += '&signs=0';
 			if (params.marker) {
@@ -674,7 +698,7 @@ window.createMap = function () {
 
 		const refreshHash = function (ev) {
 			if (ev.type === 'layeradd' || ev.type === 'layerremove') {
-				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer && ev.layer !== caveLayer)
+				if (ev.layer !== lightLayer && ev.layer !== signLayer && ev.layer !== heightLayer && ev.layer !== biomeLayer && ev.layer !== caveLayer && ev.layer !== mobspawnLayer)
 					return;
 			}
 
@@ -729,6 +753,13 @@ window.createMap = function () {
 					map.addLayer(caveLayer);
 				else
 					map.removeLayer(caveLayer);
+			}
+
+			if (features.mobspawn) {
+				if (params.mobspawn)
+					map.addLayer(mobspawnLayer);
+				else
+					map.removeLayer(mobspawnLayer);
 			}
 
 			if (features.signs) {

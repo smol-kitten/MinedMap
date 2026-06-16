@@ -129,6 +129,13 @@ pub struct Args {
 	/// regular map tiles.
 	#[arg(long)]
 	pub cave_layer: bool,
+	/// Generate a mob-spawn (spawn-proofing) map layer (Java Edition)
+	///
+	/// Highlights surface blocks where hostile mobs can spawn at night (block
+	/// light level 0 on a solid surface), selectable in the viewer. Does not
+	/// affect the regular map tiles.
+	#[arg(long)]
+	pub mob_spawn: bool,
 	/// Generate viewer overlays for generated structure bounding boxes (Java Edition)
 	///
 	/// Reads each chunk's structure data and writes the bounding boxes of
