@@ -226,6 +226,13 @@ the structure's pieces, so it covers the full footprint. For Bedrock Edition,
 village bounds (stored separately from chunk data) are surfaced in the same
 layer.
 
+### Mobs
+
+Passing `--mob-markers` reads the world's entity data (Java Edition, stored in
+the `entities` directory) and shows mobs in the viewer as toggleable marker
+layers — "Hostile mobs" (red) and "Passive mobs" (green). Non-mob entities
+(items, projectiles, …) are ignored.
+
 ### Points of interest
 
 Passing `--poi-markers` reads the world's point-of-interest data (Java Edition,

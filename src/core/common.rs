@@ -290,6 +290,10 @@ pub struct Config {
 	pub poi_markers: bool,
 	/// Path of input POI directory
 	pub poi_dir: PathBuf,
+	/// Whether to collect mob markers for the viewer
+	pub mob_markers: bool,
+	/// Path of input entity region directory
+	pub entity_region_dir: PathBuf,
 	/// Path of input region directory
 	pub region_dir: PathBuf,
 	/// Path of input `level.dat` file
@@ -312,6 +316,8 @@ pub struct Config {
 	pub viewer_pois_path: PathBuf,
 	/// Path of viewer structures file
 	pub viewer_structures_path: PathBuf,
+	/// Path of viewer mobs file
+	pub viewer_mobs_path: PathBuf,
 	/// Format of generated map tiles
 	pub image_format: ImageFormat,
 	/// Sign text filter patterns
@@ -344,6 +350,16 @@ impl Config {
 			poi_dir = [&args.input_dir, Path::new("poi")].iter().collect();
 		}
 
+		let mut entity_region_dir: PathBuf = [
+			&args.input_dir,
+			Path::new("dimensions/minecraft/overworld/entities"),
+		]
+		.iter()
+		.collect();
+		if !entity_region_dir.is_dir() {
+			entity_region_dir = [&args.input_dir, Path::new("entities")].iter().collect();
+		}
+
 		let level_dat_path: PathBuf = [&args.input_dir, Path::new("level.dat")].iter().collect();
 		let level_dat_old_path: PathBuf = [&args.input_dir, Path::new("level.dat_old")]
 			.iter()
@@ -359,6 +375,7 @@ impl Config {
 		let viewer_structures_path = [&args.output_dir, Path::new("structures.json")]
 			.iter()
 			.collect();
+		let viewer_mobs_path = [&args.output_dir, Path::new("mobs.json")].iter().collect();
 
 		let sign_patterns = Self::sign_patterns(args).context("Failed to parse sign patterns")?;
 		let sign_transforms =
@@ -389,6 +406,8 @@ impl Config {
 			structures: args.structures,
 			poi_markers: args.poi_markers,
 			poi_dir,
+			mob_markers: args.mob_markers,
+			entity_region_dir,
 			region_dir,
 			level_dat_path,
 			level_dat_old_path,
@@ -400,6 +419,7 @@ impl Config {
 			viewer_entities_path,
 			viewer_pois_path,
 			viewer_structures_path,
+			viewer_mobs_path,
 			image_format: args.image_format,
 			sign_patterns,
 			sign_transforms,

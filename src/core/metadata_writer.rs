@@ -62,6 +62,8 @@ struct Features {
 	contour: bool,
 	/// Point-of-interest marker layers
 	pois: bool,
+	/// Mob marker layers
+	mobs: bool,
 	/// Generated structure bounding box layer
 	structures: bool,
 	/// Overlay data layers (heatmap, features)
@@ -264,6 +266,7 @@ impl<'a> MetadataWriter<'a> {
 			mobspawn: self.config.mob_spawn && self.config.edition != Edition::Bedrock,
 			contour: self.config.contour_layer,
 			pois: self.config.poi_markers,
+			mobs: self.config.mob_markers,
 			structures: self.config.structures,
 			overlays: self.config.overlay_layers,
 			slime: self.config.overlay_layers && self.config.world_seed.is_some(),

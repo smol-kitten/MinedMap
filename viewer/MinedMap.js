@@ -416,6 +416,39 @@ async function loadStructures(group) {
 	}
 }
 
+async function loadMobs(groups) {
+	let data;
+	try {
+		const response = await fetch('data/mobs.json', {cache: 'no-store'});
+		if (!response.ok)
+			throw new Error('Failed to fetch mobs.json');
+		data = await response.json();
+	} catch (err) {
+		console.error('Failed to load mob data', err);
+		return;
+	}
+
+	const styles = {
+		'Hostile mobs': ['hostile', '#cc3333'],
+		'Passive mobs': ['passive', '#33aa55'],
+	};
+	for (const [name, [key, color]] of Object.entries(styles)) {
+		const group = groups[name];
+		if (!group)
+			continue;
+		for (const [x, z] of data[key] || []) {
+			L.circleMarker([-z, x], {
+				radius: 3,
+				color: '#000000',
+				weight: 1,
+				opacity: 0.5,
+				fillColor: color,
+				fillOpacity: 0.9,
+			}).addTo(group);
+		}
+	}
+}
+
 async function loadSigns(signLayer) {
 	const response = await fetch('data/entities.json', {cache: 'no-store'});
 	const res = await response.json();
@@ -644,6 +677,17 @@ window.createMap = function () {
 			const structureGroup = L.layerGroup();
 			overlayMaps['Structures'] = structureGroup;
 			loadStructures(structureGroup);
+		}
+
+		// Mob marker layers
+		if (features.mobs) {
+			const mobGroups = {
+				'Hostile mobs': L.layerGroup(),
+				'Passive mobs': L.layerGroup(),
+			};
+			for (const [name, group] of Object.entries(mobGroups))
+				overlayMaps[name] = group;
+			loadMobs(mobGroups);
 		}
 
 		// Point-of-interest marker layers
