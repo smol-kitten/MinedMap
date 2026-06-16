@@ -196,6 +196,26 @@ heatmap, built-up areas, rail / farmland / portal chunk markers, and — for Jav
 Edition worlds whose seed could be read — a slime-chunk layer. The viewer also
 gains a "Region grid" overlay drawing lines along region boundaries.
 
+### Player data
+
+Passing `--emit-player-data <dir>` (Java Edition) writes a single `players.json`
+into `<dir>` with one entry per player, so downstream tools do not have to parse
+the NBT player files themselves. The file is written atomically and its absolute
+path is printed to stdout. Each entry combines three sources:
+
+* `playerdata/<uuid>.dat` (gzipped NBT) — position, dimension, rotation, respawn
+  point, XP, health, food level, main inventory and ender chest contents;
+* `stats/<uuid>.json` — accumulated statistics (play time, deaths, kills,
+  travel distances, blocks mined/used, `killed_by` and `crafted` breakdowns);
+* `usercache.json` / `usernamecache.json` — the player name. These caches live
+  in the server directory, so MinedMap looks for them both in the input
+  directory and in its parent directory.
+
+The exact schema is documented under [Output data files](#output-data-files).
+Player UUIDs are taken from the `playerdata` file names. Bedrock Edition player
+data is not yet supported; passing the option for a Bedrock world logs a warning
+and skips the file.
+
 ### Topographic layer
 
 Passing `--height-layer` generates an additional `height` tile layer that shades
@@ -434,6 +454,53 @@ Written into the `overlays/` subdirectory when `--overlay-layers` is passed
 (and/or into the directory given to `--emit-overlays`). These use **chunk**
 coordinates and are documented in the [Overlay data](#overlay-data) section
 above.
+
+### `players.json` — player data (`--emit-player-data`)
+
+A JSON array of player objects, sorted by UUID, written into the directory given
+to `--emit-player-data`. Optional fields are omitted when absent: `name` (if no
+name cache entry was found), `spawn` (if no respawn point is set), `stats` (if no
+`stats/<uuid>.json` exists), and the `killed_by` / `crafted` maps (when empty).
+Positions use block coordinates; `rotation` is `[yaw, pitch]` in degrees;
+distance stats are in centimeters; `play_time` is in ticks (20 ticks ≈ 1
+second).
+
+```jsonc
+[
+  {
+    "uuid": "069a79f4-44e9-4726-a5be-fc90d2a28159",
+    "name": "Steve",
+    "pos": [10.5, 64.0, -20.5],
+    "dimension": "minecraft:overworld",
+    "rotation": [90.0, 0.0],
+    "spawn": [100, 70, -50],
+    "xp": { "level": 30, "total": 1395, "progress": 0.5 },
+    "health": 18.0,
+    "food": 17,
+    "stats": {
+      "play_time": 12000,
+      "deaths": 3,
+      "mob_kills": 42,
+      "player_kills": 0,
+      "walk_cm": 150000,
+      "sprint_cm": 0,
+      "swim_cm": 0,
+      "fly_cm": 0,
+      "blocks_mined": 150,
+      "blocks_placed": 30
+    },
+    "killed_by": { "minecraft:creeper": 2 },
+    "crafted": { "minecraft:torch": 64 },
+    "inventory": [
+      { "slot": 0, "id": "minecraft:diamond_sword", "count": 1 }
+    ],
+    "ender_items": []
+  }
+]
+```
+
+`blocks_placed` is the sum of the `minecraft:used` stat category, which
+approximates placements as Minecraft has no dedicated block-placement counter.
 
 ## Installation
 

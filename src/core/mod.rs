@@ -9,6 +9,7 @@ mod java_random;
 mod metadata_writer;
 mod mob;
 mod overlay;
+mod player;
 mod poi;
 mod region_group;
 mod region_processor;
@@ -119,6 +120,16 @@ pub struct Args {
 	/// Does not affect the generated map tiles.
 	#[arg(long, value_name = "DIR")]
 	pub emit_overlays: Option<PathBuf>,
+	/// Emit per-player data to the given directory (Java Edition)
+	///
+	/// Writes `players.json` into <DIR>, containing each player's position,
+	/// dimension, rotation, respawn point, XP, health, food, inventory, ender
+	/// chest, and (from `stats/<uuid>.json`) accumulated statistics. Player names
+	/// are resolved from `usercache.json` / `usernamecache.json` in the input
+	/// directory or its parent. The file is written atomically and its absolute
+	/// path is printed to stdout.
+	#[arg(long, value_name = "DIR")]
+	pub emit_player_data: Option<PathBuf>,
 	/// Generate viewer overlay layers from the per-chunk overlay data
 	///
 	/// Writes the overlay data into the output directory and exposes it in the
@@ -298,6 +309,12 @@ fn generate_java(config: &Config, rt: &Runtime) -> Result<()> {
 		write_json_emit(&dir.join("structures.json"), &structures)?;
 		write_json_emit(&dir.join("pois.json"), &pois)?;
 		write_json_emit(&dir.join("mobs.json"), &mobs)?;
+	}
+
+	if let Some(dir) = &config.emit_player_data {
+		crate::io::fs::create_dir_all(dir)?;
+		let players = player::collect(&config.input_dir);
+		write_json_emit(&dir.join("players.json"), &players)?;
 	}
 
 	Ok(())

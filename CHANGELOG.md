@@ -4,6 +4,14 @@
 
 ### Added
 
+- Added `--emit-player-data` option
+
+  Writes a `players.json` with per-player position, dimension, rotation, respawn
+  point, XP, health, food, inventory and ender chest (from `playerdata/*.dat`),
+  accumulated statistics (from `stats/*.json`), and resolved player names (from
+  `usercache.json` / `usernamecache.json`) for Java Edition worlds, so
+  downstream tools no longer need to parse the NBT player files themselves.
+
 - Added automated nightly release builds
 
   The CI workflow now publishes a rolling `nightly` prerelease with Linux,

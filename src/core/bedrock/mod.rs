@@ -324,6 +324,10 @@ pub fn generate(config: &Config, rt: &Runtime) -> Result<()> {
 		super::write_json_emit(&dir.join("structures.json"), &structures)?;
 	}
 
+	if config.emit_player_data.is_some() {
+		warn!("--emit-player-data is not yet supported for Bedrock Edition; skipping");
+	}
+
 	Ok(())
 }
 
@@ -960,6 +964,7 @@ mod test {
 			end_region_dir: input_dir.join("end"),
 			input_dir: input_dir.to_path_buf(),
 			emit_overlays: Some(overlay_dir.to_path_buf()),
+			emit_player_data: None,
 			overlay_layers: true,
 			height_layer: true,
 			biome_layer: true,

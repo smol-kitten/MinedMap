@@ -274,6 +274,8 @@ pub struct Config {
 	pub input_dir: PathBuf,
 	/// Directory to emit overlay data to, if requested
 	pub emit_overlays: Option<PathBuf>,
+	/// Directory to emit per-player data to, if requested
+	pub emit_player_data: Option<PathBuf>,
 	/// Whether to generate viewer overlay layers from the overlay data
 	pub overlay_layers: bool,
 	/// Whether to generate the topographic height layer
@@ -419,6 +421,7 @@ impl Config {
 			end_region_dir,
 			input_dir: args.input_dir.clone(),
 			emit_overlays: args.emit_overlays.clone(),
+			emit_player_data: args.emit_player_data.clone(),
 			overlay_layers: args.overlay_layers,
 			height_layer: args.height_layer,
 			biome_layer: args.biome_layer,
