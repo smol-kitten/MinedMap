@@ -122,14 +122,15 @@ pub struct Args {
 	/// Does not affect the generated map tiles.
 	#[arg(long, value_name = "DIR")]
 	pub emit_overlays: Option<PathBuf>,
-	/// Emit per-player data to the given directory (Java Edition)
+	/// Emit per-player data to the given directory
 	///
 	/// Writes `players.json` into the directory, containing each player's position,
-	/// dimension, rotation, respawn point, XP, health, food, inventory, ender
-	/// chest, and (from `stats/<uuid>.json`) accumulated statistics. Player names
-	/// are resolved from `usercache.json` / `usernamecache.json` in the input
-	/// directory or its parent. The file is written atomically and its absolute
-	/// path is printed to stdout.
+	/// dimension, rotation, respawn point, XP, health, food, inventory and ender
+	/// chest. For Java Edition it also includes the accumulated statistics from
+	/// `stats/<uuid>.json` and resolves player names from `usercache.json` /
+	/// `usernamecache.json` in the input directory or its parent; Bedrock Edition
+	/// reads the players from the world's LevelDB database. The file is written
+	/// atomically and its absolute path is printed to stdout.
 	#[arg(long, value_name = "DIR")]
 	pub emit_player_data: Option<PathBuf>,
 	/// Override the player data directory (default: `<input>/playerdata`)

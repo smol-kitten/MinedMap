@@ -4,6 +4,12 @@
 
 ### Added
 
+- Extended `--emit-player-data` to Bedrock Edition
+
+  The local player and any server players are now read from a Bedrock world's
+  LevelDB database and written to `players.json` in the same schema as Java
+  Edition (without the statistics and names that Bedrock does not store).
+
 - Added `nbt2json` and `bedrock_keys` companion tools
 
   Two standalone Cargo examples: `nbt2json` converts a single NBT data file
