@@ -4,6 +4,11 @@
 
 ### Added
 
+- Added `--contour-layer` option
+
+  Generates a contour (elevation lines) map layer drawing isolines every 8
+  blocks, selectable in the viewer as "Contours".
+
 - Added `--mob-spawn` option
 
   Generates a mob-spawn (spawn-proofing) map layer highlighting surface blocks
@@ -14,8 +19,9 @@
 - Added `--structures` option
 
   Collects the bounding boxes of generated structures (villages, fortresses,
-  monuments, …) and shows them as a toggleable "Structures" viewer layer (Java
-  Edition).
+  monuments, …) and shows them as a toggleable "Structures" viewer layer. Java
+  Edition reads per-chunk structure data; Bedrock Edition surfaces village
+  bounds from its `VILLAGE_*` records.
 
 - Added `--poi-markers` option
 

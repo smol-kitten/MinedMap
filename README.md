@@ -199,6 +199,13 @@ floor of the topmost cave found below the surface (the first air gap under solid
 ground), so cave systems near the surface become visible. Works for both Java
 and Bedrock Edition.
 
+### Contour lines
+
+Passing `--contour-layer` generates a `contour` tile layer drawing elevation
+isolines every 8 blocks (with heavier lines every 32 blocks), selectable in the
+viewer as "Contours". Overlaid on the map it gives a topographic-map look and
+makes terrain slopes easy to read. Works for both Java and Bedrock Edition.
+
 ### Mob spawning
 
 Passing `--mob-spawn` generates a `mobspawn` map layer (Java Edition) that
@@ -215,7 +222,9 @@ Passing `--structures` reads the generated-structure data from each chunk (Java
 Edition) and draws the bounding boxes of structures — villages, fortresses,
 monuments, mansions, mineshafts, … — as labeled rectangles in a toggleable
 "Structures" viewer layer, colored by structure type. Each box is the union of
-the structure's pieces, so it covers the full footprint.
+the structure's pieces, so it covers the full footprint. For Bedrock Edition,
+village bounds (stored separately from chunk data) are surfaced in the same
+layer.
 
 ### Points of interest
 
