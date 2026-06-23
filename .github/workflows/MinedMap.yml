@@ -56,24 +56,37 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  # The self-hosted Linux runners are minimal and do not ship a C toolchain
+  # (the GitHub-hosted ubuntu image used to provide one), so Rust build scripts
+  # fail with "linker `cc` not found". The build-deps job below is a reusable
+  # snippet kept inline in each Linux job that compiles code.
+
   clippy:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
           components: clippy
       - uses: swatinem/rust-cache@v2
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --tests --examples
+      # actions-rs/clippy-check@v1 is unmaintained and fails on self-hosted
+      # runners (it relies on a checks-API token flow that often 403s). Run
+      # clippy directly instead; RUSTFLAGS=-Dwarnings already makes warnings fail.
+      - run: cargo clippy --workspace --tests --examples
 
   docs:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
@@ -95,6 +108,11 @@ jobs:
           runner: '"macOS-latest"'
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
@@ -131,6 +149,12 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+
+      - name: 'Install C toolchain'
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
 
       - name: 'Get version'
         id: 'tag'
