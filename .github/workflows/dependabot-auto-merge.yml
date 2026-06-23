@@ -1,0 +1,38 @@
+name: Dependabot auto-merge
+# Plan-independent auto-merge that ALSO works on private repos. GitHub's native
+# auto-merge (`gh pr merge --auto`) is plan-gated on private repos, so instead a
+# daily reaper directly squash-merges Dependabot's GROUPED patch/minor PRs once
+# their checks are green. Those PRs carry "minor-and-patch" in the branch name
+# (per the group in dependabot.yml); major-version updates arrive as separate,
+# ungrouped PRs and are intentionally left for manual review.
+# Uses DEPENDABOT_AUTOMERGE_TOKEN (a PAT, set later) if present, else GITHUB_TOKEN.
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  reap:
+    runs-on: [self-hosted, linux]
+    steps:
+      - name: Merge green Dependabot patch/minor PRs
+        env:
+          GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          prs=$(gh pr list --repo "$REPO" --author 'app/dependabot' --state open --json number,headRefName --jq '.[] | select(.headRefName | test("minor-and-patch")) | .number')
+          if [ -z "$prs" ]; then echo "No grouped Dependabot PRs."; exit 0; fi
+          for pr in $prs; do
+            out=$(gh pr checks "$pr" --repo "$REPO" 2>&1); rc=$?
+            if [ "$rc" -eq 0 ] || echo "$out" | grep -qiE 'no checks'; then
+              echo "PR #$pr: checks green/none -> merging"
+              gh pr merge "$pr" --repo "$REPO" --squash --delete-branch || echo "PR #$pr: merge deferred (conflict/branch protection) — Dependabot will rebase"
+            else
+              echo "PR #$pr: checks pending/failing -> skip this pass"
+            fi
+          done
