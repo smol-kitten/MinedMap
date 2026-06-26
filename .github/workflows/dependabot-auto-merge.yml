@@ -1,11 +1,12 @@
 name: Dependabot auto-merge
-# Plan-independent auto-merge that ALSO works on private repos. GitHub's native
-# auto-merge (`gh pr merge --auto`) is plan-gated on private repos, so instead a
-# daily reaper directly squash-merges Dependabot's GROUPED patch/minor PRs once
-# their checks are green. Those PRs carry "minor-and-patch" in the branch name
-# (per the group in dependabot.yml); major-version updates arrive as separate,
-# ungrouped PRs and are intentionally left for manual review.
-# Uses DEPENDABOT_AUTOMERGE_TOKEN (a PAT, set later) if present, else GITHUB_TOKEN.
+# Plan-independent, runner-independent auto-merge for Dependabot's GROUPED
+# patch/minor PRs (branch contains "minor-and-patch"). Major bumps arrive
+# ungrouped and are left for manual review.
+#
+# Uses actions/github-script (runs on the runner's bundled Node — no `gh` CLI to
+# install, which an ARC/k8s runner image can't provide) and merges via the REST
+# API with the auto-provided GITHUB_TOKEN (a scheduled run grants it
+# pull-requests:write — no PAT / org secret needed).
 on:
   schedule:
     - cron: '23 4 * * *'
@@ -20,19 +21,35 @@ jobs:
     runs-on: [self-hosted, linux]
     steps:
       - name: Merge green Dependabot patch/minor PRs
-        env:
-          GH_TOKEN: ${{ secrets.DEPENDABOT_AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -uo pipefail
-          prs=$(gh pr list --repo "$REPO" --author 'app/dependabot' --state open --json number,headRefName --jq '.[] | select(.headRefName | test("minor-and-patch")) | .number')
-          if [ -z "$prs" ]; then echo "No grouped Dependabot PRs."; exit 0; fi
-          for pr in $prs; do
-            out=$(gh pr checks "$pr" --repo "$REPO" 2>&1); rc=$?
-            if [ "$rc" -eq 0 ] || echo "$out" | grep -qiE 'no checks'; then
-              echo "PR #$pr: checks green/none -> merging"
-              gh pr merge "$pr" --repo "$REPO" --squash --delete-branch || echo "PR #$pr: merge deferred (conflict/branch protection) — Dependabot will rebase"
-            else
-              echo "PR #$pr: checks pending/failing -> skip this pass"
-            fi
-          done
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const prs = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            for (const pr of prs) {
+              const isDependabot = pr.user && (pr.user.login === 'dependabot[bot]' || pr.user.login === 'app/dependabot');
+              if (!isDependabot) continue;
+              if (!/minor-and-patch/.test(pr.head.ref)) continue;
+
+              const sha = pr.head.sha;
+              const [{ data: combined }, { data: checks }] = await Promise.all([
+                github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: sha }),
+                github.rest.checks.listForRef({ owner, repo, ref: sha, per_page: 100 }),
+              ]);
+              const runs = checks.check_runs.filter(c => c.name !== 'Merge green Dependabot patch/minor PRs');
+              const pending = combined.state === 'pending' || runs.some(c => c.status !== 'completed');
+              const failed  = ['failure', 'error'].includes(combined.state) ||
+                runs.some(c => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion));
+
+              if (pending) { core.info(`#${pr.number}: checks pending -> skip`); continue; }
+              if (failed)  { core.info(`#${pr.number}: checks failing -> skip`); continue; }
+              try {
+                await github.rest.pulls.merge({ owner, repo, pull_number: pr.number, merge_method: 'squash' });
+                core.info(`#${pr.number}: merged`);
+                try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${pr.head.ref}` }); } catch (_) {}
+              } catch (e) {
+                core.info(`#${pr.number}: merge deferred — ${e.message}`);
+              }
+            }
