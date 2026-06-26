@@ -19,7 +19,7 @@ env:
 
 jobs:
   viewer:
-    runs-on: 'ubuntu-latest'
+    runs-on: [self-hosted, linux]
 
     steps:
       - name: 'Checkout'
@@ -44,9 +44,10 @@ jobs:
         with:
           name: 'MinedMap-${{ steps.tag.outputs.tag }}-viewer'
           path: 'build/pkg'
+          retention-days: 7
 
   fmt:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master
@@ -55,24 +56,37 @@ jobs:
           components: rustfmt
       - run: cargo fmt --all -- --check
 
+  # The self-hosted Linux runners are minimal and do not ship a C toolchain
+  # (the GitHub-hosted ubuntu image used to provide one), so Rust build scripts
+  # fail with "linker `cc` not found". The build-deps job below is a reusable
+  # snippet kept inline in each Linux job that compiles code.
+
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
           components: clippy
       - uses: swatinem/rust-cache@v2
-      - uses: actions-rs/clippy-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          args: --workspace --tests --examples
+      # actions-rs/clippy-check@v1 is unmaintained and fails on self-hosted
+      # runners (it relies on a checks-API token flow that often 403s). Run
+      # clippy directly instead; RUSTFLAGS=-Dwarnings already makes warnings fail.
+      - run: cargo clippy --workspace --tests --examples
 
   docs:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
@@ -81,13 +95,24 @@ jobs:
       - run: cargo doc --workspace --no-deps --document-private-items
 
   test:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macOS-latest]
+        include:
+        - os: 'ubuntu-latest'
+          runner: '["self-hosted", "linux"]'
+        - os: 'windows-latest'
+          runner: '"windows-latest"'
+        - os: 'macOS-latest'
+          runner: '"macOS-latest"'
     steps:
       - uses: actions/checkout@v4
+      - name: 'Install C toolchain'
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.96'
@@ -98,27 +123,38 @@ jobs:
       - run: cargo test --workspace --no-default-features --examples --bins
 
   build:
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
       matrix:
         include:
         - os: 'macos-15'
+          runner: '"macos-15"'
           target: 'aarch64-apple-darwin'
         - os: 'macos-15'
+          runner: '"macos-15"'
           target: 'x86_64-apple-darwin'
         - os: 'windows-2022'
+          runner: '"windows-2022"'
           target: 'x86_64-pc-windows-msvc'
           ext: '.exe'
         - os: 'windows-2022'
+          runner: '"windows-2022"'
           target: 'i686-pc-windows-msvc'
           ext: '.exe'
         - os: 'ubuntu-22.04'
+          runner: '["self-hosted", "linux"]'
           target: 'x86_64-unknown-linux-gnu'
 
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@v4'
+
+      - name: 'Install C toolchain'
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install build-essential
 
       - name: 'Get version'
         id: 'tag'
@@ -152,13 +188,14 @@ jobs:
         with:
           name: 'MinedMap-${{ steps.tag.outputs.tag }}-${{ matrix.target }}'
           path: 'target/pkg'
+          retention-days: 7
 
   # Publishes a rolling "nightly" prerelease with the cross-platform binaries
   # (Linux, Windows, macOS) and the viewer archive. Runs on pushes to main and
   # on the nightly schedule; skipped for pull requests and version tag builds
   # (which are handled as regular releases).
   release-nightly:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs:
       - build
       - viewer
@@ -208,7 +245,7 @@ jobs:
             --notes-file release-notes.md
 
   build-container:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs:
       - test
     permissions:
@@ -260,7 +297,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
 
   viewer-container:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     needs:
       - test
     permissions:
