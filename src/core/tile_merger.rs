@@ -65,8 +65,12 @@ pub trait TileMerger {
 				}
 
 				let source_path = self.tile_path(level - 1, source_coords);
-				let timestamp = match fs::modified_timestamp(&source_path) {
-					Ok(timestamp) => timestamp,
+				let timestamp = match fs::modified_timestamp_opt(&source_path) {
+					// A missing source tile is normal: not every layer produces a
+					// tile for every region (e.g. Bedrock has no lightmap tiles),
+					// so skip it silently instead of warning.
+					Ok(Some(timestamp)) => timestamp,
+					Ok(None) => return None,
 					Err(err) => {
 						warn!("{:?}", err);
 						return None;
