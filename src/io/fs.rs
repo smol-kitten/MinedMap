@@ -169,6 +169,25 @@ pub fn modified_timestamp(path: &Path) -> Result<SystemTime> {
 		})
 }
 
+/// Returns the time of last modification for a given file path, or `Ok(None)`
+/// if the file does not exist
+///
+/// A missing source file is an expected condition for layers that are not
+/// generated for every region (e.g. the lightmap layer is never produced for
+/// Bedrock worlds), so it must not be treated as an error.
+pub fn modified_timestamp_opt(path: &Path) -> Result<Option<SystemTime>> {
+	match fs::metadata(path).and_then(|meta| meta.modified()) {
+		Result::Ok(ts) => Ok(Some(ts)),
+		Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
+		Err(err) => Err(err).with_context(|| {
+			format!(
+				"Failed to get modified timestamp of file {}",
+				path.display()
+			)
+		}),
+	}
+}
+
 /// Reads the stored timestamp from file metadata for a file previously written
 /// using [create_with_timestamp]
 pub fn read_timestamp(path: &Path, version: FileMetaVersion) -> Option<SystemTime> {
