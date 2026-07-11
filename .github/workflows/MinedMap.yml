@@ -227,22 +227,39 @@ jobs:
           ls -l release
 
       - name: 'Publish nightly release'
-        env:
-          GH_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-        run: |
-          set -euo pipefail
-          built="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          {
-            printf 'Automated nightly build of `main` (commit %s, built %s).\n\n' "$GITHUB_SHA" "$built"
-            printf 'These binaries are built from the latest development code and are not a stable release.\n'
-          } > release-notes.md
-          # Roll the nightly tag/release forward to the current commit.
-          gh release delete nightly --yes --cleanup-tag || true
-          gh release create nightly release/*.zip \
-            --target "$GITHUB_SHA" \
-            --prerelease \
-            --title "Nightly build" \
-            --notes-file release-notes.md
+        uses: 'actions/github-script@v7'
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const { owner, repo } = context.repo;
+            const tag = 'nightly';
+            const built = new Date().toISOString();
+            const body = `Automated nightly build of \`main\` (commit ${context.sha}, built ${built}).\n\n`
+              + `These binaries are built from the latest development code and are not a stable release.\n`;
+            // Roll the nightly tag/release forward to the current commit: delete the old release + tag.
+            try {
+              const { data: rel } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: rel.id });
+            } catch (e) { if (e.status !== 404) throw e; }
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+            } catch (e) { if (e.status !== 404 && e.status !== 422) throw e; }
+            // Create a fresh prerelease at the current commit.
+            const { data: release } = await github.rest.repos.createRelease({
+              owner, repo, tag_name: tag, target_commitish: context.sha,
+              name: 'Nightly build', body, prerelease: true,
+            });
+            // Upload every packaged archive.
+            for (const file of fs.readdirSync('release')) {
+              if (!file.endsWith('.zip')) continue;
+              const data = fs.readFileSync(path.join('release', file));
+              await github.rest.repos.uploadReleaseAsset({
+                owner, repo, release_id: release.id, name: file, data,
+                headers: { 'content-type': 'application/zip', 'content-length': data.length },
+              });
+            }
+            core.info(`Published ${tag} at ${context.sha}`);
 
   build-container:
     runs-on: [self-hosted, linux]
