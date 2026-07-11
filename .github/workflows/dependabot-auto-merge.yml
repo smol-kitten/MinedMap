@@ -15,6 +15,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  checks: read      # read PR check-run state (github-script)
+  statuses: read    # read legacy commit-status state
 
 jobs:
   reap:
