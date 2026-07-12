@@ -1,0 +1,138 @@
+# Universal OSS security scan — free, quota-less, PRIVATE-repo friendly.
+#
+# Replaces Snyk. Every scanner is FREE OSS and writes findings to the job summary
+# ($GITHUB_STEP_SUMMARY) + uploads raw reports as artifacts — NO SARIF / code-scanning
+# upload, which requires paid GitHub Advanced Security on private repos (that's why the
+# old security-full.yml silently 403'd fleet-wide). Advisory by design: every scanner is
+# non-gating (continue-on-error) so it surfaces findings without blocking merges while the
+# audit backlog is worked down. Promote a scanner to gating (drop continue-on-error) once
+# its findings hit zero.
+#
+# Runs on ubuntu-latest so it works on EVERY repo (no self-hosted runner needed — some
+# accounts don't have one). The OSS tools run fine on the GitHub-hosted runner.
+#
+# Coverage:
+#   secrets      gitleaks                     — committed credentials (all repos)
+#   deps         OSV-Scanner (osv.dev)        — dependency CVEs across nuget/npm/composer/
+#                                                go/pypi/cargo lockfiles (the Snyk-deps job)
+#   sast         Semgrep (--config=auto)      — SAST for PHP/JS/TS/C#/Python/Go, works on
+#                                                private repos (CodeQL needs paid GHAS)
+#   go-security  govulncheck + gosec          — only when a go.mod is present
+name: Security Scan
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths-ignore: ['**.md', 'docs/**', '.claude/**']
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 * * 1'        # weekly Monday 06:00 UTC — catches newly-disclosed CVEs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install + run gitleaks
+        continue-on-error: true
+        run: |
+          echo '## 🔑 gitleaks (secrets)' >> "$GITHUB_STEP_SUMMARY"
+          V=8.21.2
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+            | tar -xz -C /tmp gitleaks 2>/dev/null || { echo '_gitleaks download failed_' >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          if /tmp/gitleaks detect --source . --no-banner --redact --report-format json --report-path /tmp/gitleaks.json 2>/tmp/gl.log; then
+            echo '✅ no leaks found' >> "$GITHUB_STEP_SUMMARY"
+          else
+            n=$(python3 -c "import json;print(len(json.load(open('/tmp/gitleaks.json'))))" 2>/dev/null || echo '?')
+            echo "⚠️ **$n potential secret(s)** — see the gitleaks artifact" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: gitleaks-report, path: /tmp/gitleaks.json, if-no-files-found: ignore }
+
+  deps:
+    name: Dependency CVEs (OSV-Scanner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install + run OSV-Scanner
+        continue-on-error: true
+        run: |
+          echo '## 📦 OSV-Scanner (dependency CVEs)' >> "$GITHUB_STEP_SUMMARY"
+          V=1.9.2
+          curl -sSL -o /tmp/osv "https://github.com/google/osv-scanner/releases/download/v${V}/osv-scanner_linux_amd64" \
+            && chmod +x /tmp/osv || { echo '_osv-scanner download failed_' >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          if /tmp/osv scan --recursive --format table --output /tmp/osv.txt . 2>/tmp/osv.log; then
+            echo '✅ no known dependency vulnerabilities' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '<details><summary>vulnerable dependencies</summary>' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+            head -120 /tmp/osv.txt >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"; echo '</details>' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: osv-report, path: /tmp/osv.txt, if-no-files-found: ignore }
+
+  sast:
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - name: Install + run Semgrep
+        continue-on-error: true
+        run: |
+          echo '## 🔎 Semgrep (SAST)' >> "$GITHUB_STEP_SUMMARY"
+          python3 -m pip install --quiet --disable-pip-version-check semgrep || { echo '_semgrep install failed_' >> "$GITHUB_STEP_SUMMARY"; exit 0; }
+          semgrep scan --config=auto --quiet --json --output=/tmp/semgrep.json . 2>/tmp/sg.log || true
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY" || echo '_semgrep parse failed_' >> "$GITHUB_STEP_SUMMARY"
+          import json, collections
+          try: r = json.load(open('/tmp/semgrep.json')).get('results', [])
+          except Exception: r = []
+          sev = collections.Counter(x.get('extra', {}).get('severity', 'INFO') for x in r)
+          if not r:
+              print('✅ no SAST findings')
+          else:
+              print(f"⚠️ **{len(r)} finding(s)** — " + ", ".join(f"{k}:{v}" for k, v in sev.most_common()))
+              print('<details><summary>top findings</summary>\n\n```')
+              for x in r[:40]:
+                  print(f"{x.get('path','?')}:{x.get('start',{}).get('line','?')}  {x.get('check_id','')}")
+              print('```\n</details>')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: semgrep-report, path: /tmp/semgrep.json, if-no-files-found: ignore }
+
+  go-security:
+    name: Go security (govulncheck + gosec)
+    runs-on: ubuntu-latest
+    if: hashFiles('**/go.mod') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: 'stable' }
+      - name: Install + run govulncheck & gosec
+        continue-on-error: true
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install github.com/securego/gosec/v2/cmd/gosec@latest
+          GB="$(go env GOPATH)/bin"
+          echo '## 🐹 Go security' >> "$GITHUB_STEP_SUMMARY"
+          echo '### govulncheck' >> "$GITHUB_STEP_SUMMARY"
+          if "$GB/govulncheck" ./... > /tmp/govuln.txt 2>&1; then
+            echo '✅ no known vulnerabilities' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '```' >> "$GITHUB_STEP_SUMMARY"; grep -E 'Vulnerability #|More info' /tmp/govuln.txt | head -60 >> "$GITHUB_STEP_SUMMARY" || true; echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '### gosec' >> "$GITHUB_STEP_SUMMARY"
+          "$GB/gosec" -quiet -fmt=text -out=/tmp/gosec.txt ./... || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"; grep -E 'Severity: (HIGH|MEDIUM)|Issues :' /tmp/gosec.txt | head -60 >> "$GITHUB_STEP_SUMMARY" || true; echo '```' >> "$GITHUB_STEP_SUMMARY"
