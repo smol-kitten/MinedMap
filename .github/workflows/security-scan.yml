@@ -115,12 +115,16 @@ jobs:
   go-security:
     name: Go security (govulncheck + gosec)
     runs-on: ubuntu-latest
-    if: hashFiles('**/go.mod') != ''
+    # NOTE: hashFiles() is NOT valid in a job-level `if:` (evaluated server-side before a
+    # runner/workspace exists → "Unrecognized function: 'hashFiles'", 0 jobs, whole workflow
+    # rejected). Guard the go-only steps at STEP level instead, where the workspace exists.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
+        if: hashFiles('**/go.mod') != ''
         with: { go-version: 'stable' }
       - name: Install + run govulncheck & gosec
+        if: hashFiles('**/go.mod') != ''
         continue-on-error: true
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
