@@ -55,7 +55,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: gitleaks-report, path: /tmp/gitleaks.json, if-no-files-found: ignore }
+        with: { name: gitleaks-report, path: /tmp/gitleaks.json, if-no-files-found: ignore, retention-days: 7 }
 
   deps:
     name: Dependency CVEs (OSV-Scanner)
@@ -79,7 +79,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: osv-report, path: /tmp/osv.txt, if-no-files-found: ignore }
+        with: { name: osv-report, path: /tmp/osv.txt, if-no-files-found: ignore, retention-days: 7 }
 
   sast:
     name: SAST (Semgrep)
@@ -110,7 +110,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         if: always()
-        with: { name: semgrep-report, path: /tmp/semgrep.json, if-no-files-found: ignore }
+        with: { name: semgrep-report, path: /tmp/semgrep.json, if-no-files-found: ignore, retention-days: 7 }
 
   go-security:
     name: Go security (govulncheck + gosec)
