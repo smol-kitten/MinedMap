@@ -114,10 +114,6 @@ jobs:
         include:
         - os: 'ubuntu-latest'
           runner: '["self-hosted", "linux"]'
-        - os: 'windows-latest'
-          runner: '"windows-latest"'
-        - os: 'macOS-latest'
-          runner: '"macOS-latest"'
     steps:
       - uses: actions/checkout@v4
       - name: 'Install C toolchain'
