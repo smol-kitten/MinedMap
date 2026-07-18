@@ -9,7 +9,7 @@ name: Dependabot auto-merge
 # pull-requests:write — no PAT / org secret needed).
 on:
   schedule:
-    - cron: '23 4 * * *'
+    - cron: '29 4 * * *'
   workflow_dispatch:
 
 permissions:
@@ -17,6 +17,10 @@ permissions:
   pull-requests: write
   checks: read      # read PR check-run state (github-script)
   statuses: read    # read legacy commit-status state
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   reap:
