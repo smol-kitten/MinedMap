@@ -27,11 +27,15 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    - cron: '0 6 * * 1'        # weekly Monday 06:00 UTC — catches newly-disclosed CVEs
+    - cron: '6 6 * * 1'        # weekly Monday 06:00 UTC — catches newly-disclosed CVEs
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secrets:
@@ -54,6 +58,7 @@ jobs:
             echo "⚠️ **$n potential secret(s)** — see the gitleaks artifact" >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/upload-artifact@v4
+          retention-days: 3
         if: always()
         with: { name: gitleaks-report, path: /tmp/gitleaks.json, if-no-files-found: ignore, retention-days: 7 }
 
@@ -78,6 +83,7 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"; echo '</details>' >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/upload-artifact@v4
+          retention-days: 3
         if: always()
         with: { name: osv-report, path: /tmp/osv.txt, if-no-files-found: ignore, retention-days: 7 }
 
@@ -109,6 +115,7 @@ jobs:
               print('```\n</details>')
           PY
       - uses: actions/upload-artifact@v4
+          retention-days: 3
         if: always()
         with: { name: semgrep-report, path: /tmp/semgrep.json, if-no-files-found: ignore, retention-days: 7 }
 
