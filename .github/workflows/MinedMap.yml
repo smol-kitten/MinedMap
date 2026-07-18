@@ -8,10 +8,11 @@ on:
   pull_request:
     branches:
       - 'main'
-  schedule:
-    # Nightly build at 04:00 UTC
-    - cron: '0 4 * * *'
   workflow_dispatch: {}
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   RUSTFLAGS: -Dwarnings
