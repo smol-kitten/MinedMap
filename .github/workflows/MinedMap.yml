@@ -5,9 +5,17 @@ on:
       - 'main'
     tags:
       - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
     branches:
       - 'main'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   workflow_dispatch: {}
 
 concurrency:
@@ -120,6 +128,7 @@ jobs:
       - run: cargo test --workspace --no-default-features --examples --bins
 
   build:
+    if: startsWith(matrix.os, 'ubuntu') || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
