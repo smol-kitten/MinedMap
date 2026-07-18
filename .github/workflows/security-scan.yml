@@ -36,7 +36,7 @@ permissions:
 jobs:
   secrets:
     name: Secret scan (gitleaks)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -59,7 +59,7 @@ jobs:
 
   deps:
     name: Dependency CVEs (OSV-Scanner)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - name: Install + run OSV-Scanner
@@ -83,7 +83,7 @@ jobs:
 
   sast:
     name: SAST (Semgrep)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -114,7 +114,7 @@ jobs:
 
   go-security:
     name: Go security (govulncheck + gosec)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
     # NOTE: hashFiles() is NOT valid in a job-level `if:` (evaluated server-side before a
     # runner/workspace exists → "Unrecognized function: 'hashFiles'", 0 jobs, whole workflow
     # rejected). Guard the go-only steps at STEP level instead, where the workspace exists.
