@@ -27,11 +27,15 @@ on:
   pull_request:
     branches: [main, master]
   schedule:
-    - cron: '0 6 * * 1'        # weekly Monday 06:00 UTC — catches newly-disclosed CVEs
+    - cron: '6 6 * * 1'        # weekly Monday 06:00 UTC — catches newly-disclosed CVEs
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   secrets:
