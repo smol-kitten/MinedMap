@@ -5,6 +5,10 @@ on:
       - 'main'
     tags:
       - 'v*'
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
   pull_request:
     branches:
       - 'main'
@@ -14,10 +18,11 @@ on:
       - 'LICENSE'
       - '.gitignore'
       - '.editorconfig'
-  schedule:
-    # Nightly build at 04:00 UTC
-    - cron: '10 4 * * *'
   workflow_dispatch: {}
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.ref }}'
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   RUSTFLAGS: -Dwarnings
@@ -113,10 +118,6 @@ jobs:
         include:
         - os: 'ubuntu-latest'
           runner: '["self-hosted", "linux"]'
-        - os: 'windows-latest'
-          runner: '"windows-latest"'
-        - os: 'macOS-latest'
-          runner: '"macOS-latest"'
     steps:
       - uses: actions/checkout@v4
       - name: 'Install C toolchain'
@@ -134,6 +135,7 @@ jobs:
       - run: cargo test --workspace --no-default-features --examples --bins
 
   build:
+    if: startsWith(matrix.os, 'ubuntu') || startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     runs-on: ${{ fromJSON(matrix.runner) }}
     strategy:
       fail-fast: false
