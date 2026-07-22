@@ -10,7 +10,7 @@
 * Typically uses less than 100MB of RAM in single-threaded operation (may be higher when `-j` is passed)
 * Cross-platform: runs on Linux, Windows, and likely other systems like MacOS as well
 
-![Screenshot](https://raw.githubusercontent.com/neocturne/MinedMap/997a4fb24e89d2cd3c671d77eafaa47084d14304/docs/images/MinedMap.png)
+![Screenshot](https://raw.githubusercontent.com/smol-kitten/MinedMap/997a4fb24e89d2cd3c671d77eafaa47084d14304/docs/images/MinedMap.png)
 
 ## About
 
@@ -20,7 +20,7 @@ based on [Leaflet](https://leafletjs.com/). The map renderer is heavily inspired
 [MapRend](https://github.com/YSelfTool/MapRend), but has been reimplemented from scratch
 (first in C++, now in Rust) for highest performance.
 
-Demo: https://neocturne.github.io/MinedMap/
+Demo (upstream): https://neocturne.github.io/MinedMap/
 
 ## How to use
 
@@ -77,7 +77,7 @@ image format.
 
 ### Signs
 
-![Sign screenshot](https://raw.githubusercontent.com/neocturne/MinedMap/e5d9c813ba3118d04dc7e52e3dc6f48808a69120/docs/images/signs.png)
+![Sign screenshot](https://raw.githubusercontent.com/smol-kitten/MinedMap/e5d9c813ba3118d04dc7e52e3dc6f48808a69120/docs/images/signs.png)
 
 MinedMap can display sign markers on the map, which will open a popup showing
 the sign text when clicked.
@@ -600,14 +600,18 @@ containing the viewer can be found on the GitHub release page.
 Building the generator from source requires a recent Rust toolchain (1.72.0
 or newer). The following command can be used to build the current development version:
 ```shell
-cargo install --git 'https://github.com/neocturne/MinedMap.git'
+cargo install --git 'https://github.com/smol-kitten/MinedMap.git'
 ```
 
 If you are looking for the older C++ implementation of the MinedMap tile renderer,
-see the [v1.19.1](https://github.com/neocturne/MinedMap/tree/v1.19.1) tag.
+see the [v1.19.1](https://github.com/smol-kitten/MinedMap/tree/v1.19.1) tag.
 
 ## See also
 
 Other projects using MinedMap:
 
 - [minecraft\_map\_marker](https://github.com/christopher-besch/minecraft_map_marker)
+
+## Acknowledgements
+
+This repository is a fork of [neocturne/MinedMap](https://github.com/neocturne/MinedMap) — all upstream credit, license and attributions apply. The upstream demo and docs remain the canonical reference.
