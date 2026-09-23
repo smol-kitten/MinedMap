@@ -1,0 +1,22 @@
+# Caller stub → private vulnerability reporting + security policy check (public repo).
+# Advisory (strict: false). See workcollection/fleet-actions docs/TAG-PLAN.md.
+name: PVR check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '49 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pvr:
+    uses: workcollection/fleet-actions/.github/workflows/pvr-check.yml@v2.0.0
+    with:
+      runs-on: self-hosted
+      strict: false
