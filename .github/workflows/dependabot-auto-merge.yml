@@ -1,12 +1,9 @@
+# Caller stub → the fleet dependabot reaper (merges green minor/patch PRs).
+# MUST run on schedule/dispatch, NOT `pull_request`: dependabot-triggered events
+# get a read-only token that cannot merge; a scheduled run gets pull-requests:write
+# (and the reusable workflow fails on purpose if called from a PR event).
 name: Dependabot auto-merge
-# Plan-independent, runner-independent auto-merge for Dependabot's GROUPED
-# patch/minor PRs (branch contains "minor-and-patch"). Major bumps arrive
-# ungrouped and are left for manual review.
-#
-# Uses actions/github-script (runs on the runner's bundled Node — no `gh` CLI to
-# install, which an ARC/k8s runner image can't provide) and merges via the REST
-# API with the auto-provided GITHUB_TOKEN (a scheduled run grants it
-# pull-requests:write — no PAT / org secret needed).
+
 on:
   schedule:
     - cron: '29 4 * * *'
@@ -15,47 +12,12 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  checks: read      # read PR check-run state (github-script)
-  statuses: read    # read legacy commit-status state
-
-concurrency:
-  group: '${{ github.workflow }}-${{ github.ref }}'
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  checks: read
+  statuses: read
 
 jobs:
-  reap:
-    runs-on: [self-hosted, linux]
-    steps:
-      - name: Merge green Dependabot patch/minor PRs
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { owner, repo } = context.repo;
-            const prs = await github.paginate(github.rest.pulls.list, {
-              owner, repo, state: 'open', per_page: 100,
-            });
-            for (const pr of prs) {
-              const isDependabot = pr.user && (pr.user.login === 'dependabot[bot]' || pr.user.login === 'app/dependabot');
-              if (!isDependabot) continue;
-              if (!/minor-and-patch/.test(pr.head.ref)) continue;
-
-              const sha = pr.head.sha;
-              const [{ data: combined }, { data: checks }] = await Promise.all([
-                github.rest.repos.getCombinedStatusForRef({ owner, repo, ref: sha }),
-                github.rest.checks.listForRef({ owner, repo, ref: sha, per_page: 100 }),
-              ]);
-              const runs = checks.check_runs.filter(c => c.name !== 'Merge green Dependabot patch/minor PRs');
-              const pending = combined.state === 'pending' || runs.some(c => c.status !== 'completed');
-              const failed  = ['failure', 'error'].includes(combined.state) ||
-                runs.some(c => c.conclusion && !['success', 'neutral', 'skipped'].includes(c.conclusion));
-
-              if (pending) { core.info(`#${pr.number}: checks pending -> skip`); continue; }
-              if (failed)  { core.info(`#${pr.number}: checks failing -> skip`); continue; }
-              try {
-                await github.rest.pulls.merge({ owner, repo, pull_number: pr.number, merge_method: 'squash' });
-                core.info(`#${pr.number}: merged`);
-                try { await github.rest.git.deleteRef({ owner, repo, ref: `heads/${pr.head.ref}` }); } catch (_) {}
-              } catch (e) {
-                core.info(`#${pr.number}: merge deferred — ${e.message}`);
-              }
-            }
+  auto-merge:
+    uses: workcollection/fleet-actions/.github/workflows/dependabot-auto-merge.yml@v2.0.0
+    with:
+      runs-on: self-hosted
+      # Default policy: minor + patch only. Majors held for manual review.
