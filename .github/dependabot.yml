@@ -4,23 +4,38 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "wednesday"
+      time: "05:30"
+      timezone: "Europe/Berlin"
     open-pull-requests-limit: 10
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+      majors:
+        update-types: ["major"]
   - package-ecosystem: "cargo"
     directories: ["/", "/crates/default-alloc", "/crates/nbt", "/crates/resource", "/crates/types"]
     schedule:
       interval: "weekly"
+      day: "wednesday"
+      time: "05:40"
+      timezone: "Europe/Berlin"
     open-pull-requests-limit: 10
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+      majors:
+        update-types: ["major"]
   - package-ecosystem: "docker"
     directories: ["/", "/viewer"]
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+      day: "wednesday"
+      time: "05:50"
+      timezone: "Europe/Berlin"
+    open-pull-requests-limit: 2
     groups:
       minor-and-patch:
         update-types: ["minor", "patch"]
+      majors:
+        update-types: ["major"]
